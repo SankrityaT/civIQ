@@ -11,17 +11,15 @@ export default function LandingPage() {
         {/* ── iOS 26 LIQUID GLASS NAV ──────────────────────────────────── */}
         <nav className="glass-nav">
           <Link href="/" className="glass-nav-logo">
-            <div className="relative h-8 w-8 overflow-hidden rounded-full">
+            <div className="relative h-9 w-28">
               <Image
-                src="/logo.jpeg"
-                alt="Civiq Logo"
+                src="/civiq-logo-transparent.png"
+                alt="Civiq"
                 fill
-                className="object-cover"
+                className="object-contain"
+                priority
               />
             </div>
-            <span className="text-[13px] font-bold tracking-tight text-usa-blue">
-              Civiq
-            </span>
           </Link>
           <a href="#meet-sam" className="glass-nav-item">
             Meet Sam
