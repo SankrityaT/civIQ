@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display } from "next/font/google";
+import { Inter, Playfair_Display, Libre_Baskerville, DM_Sans, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -10,6 +10,24 @@ const inter = Inter({
 const playfair = Playfair_Display({
   variable: "--font-playfair",
   subsets: ["latin"],
+});
+
+const libreBaskerville = Libre_Baskerville({
+  variable: "--font-libre",
+  subsets: ["latin"],
+  weight: ["400", "700"],
+});
+
+const dmSans = DM_Sans({
+  variable: "--font-dm",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const cormorant = Cormorant_Garamond({
+  variable: "--font-cormorant",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
 export const metadata: Metadata = {
@@ -26,7 +44,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${playfair.variable} antialiased`}
+        className={`${inter.variable} ${playfair.variable} ${libreBaskerville.variable} ${dmSans.variable} ${cormorant.variable} antialiased`}
       >
         {children}
       </body>
