@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
@@ -40,6 +41,20 @@ export default function Sidebar() {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto px-3 py-5">
+        {/* Ask Sam shortcut */}
+        <Link
+          href="/chat"
+          className="mb-4 flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2.5 transition-all hover:bg-amber-500/20"
+        >
+          <div className="relative h-7 w-7 flex-shrink-0 overflow-hidden rounded-full ring-1 ring-amber-400/50">
+            <Image src="/logo.jpeg" alt="Sam" fill className="object-cover" unoptimized />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-amber-300">Ask Sam</p>
+            <p className="text-[10px] text-amber-500/70">Poll worker chat</p>
+          </div>
+        </Link>
+
         <p className="mb-2 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-500">
           Menu
         </p>
