@@ -1,9 +1,11 @@
 "use client";
-// TODO (Kinjal): Build drag-and-drop upload with progress, call POST /api/documents
+import { Upload } from "lucide-react";
+
 export default function DocumentUpload() {
   return (
-    <button className="rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700">
-      + Upload Document
+    <button className="flex items-center gap-2 rounded-full bg-slate-900 px-4 py-2 text-sm font-medium text-white shadow-sm transition hover:bg-slate-800">
+      <Upload className="h-3.5 w-3.5" />
+      Upload Document
     </button>
   );
 }
