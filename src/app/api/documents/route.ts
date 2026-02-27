@@ -1,42 +1,55 @@
-import { NextResponse } from "next/server";
-import { TrainingDocument } from "@/types";
-
-// Sample documents — in production, read from SQLite / local file store
-const SAMPLE_DOCUMENTS: TrainingDocument[] = [
-  {
-    id: "doc-001",
-    name: "Poll Worker Training Manual 2026",
-    status: "active",
-    wordCount: 1240,
-    sections: 8,
-    uploadedAt: "2026-01-15T09:00:00Z",
-    lastUpdated: "2026-02-01T14:30:00Z",
-  },
-  {
-    id: "doc-002",
-    name: "Election Day Procedures Guide",
-    status: "active",
-    wordCount: 820,
-    sections: 5,
-    uploadedAt: "2026-01-20T10:00:00Z",
-    lastUpdated: "2026-01-20T10:00:00Z",
-  },
-  {
-    id: "doc-003",
-    name: "Voter ID Requirements by State",
-    status: "inactive",
-    wordCount: 490,
-    sections: 3,
-    uploadedAt: "2026-01-22T11:00:00Z",
-    lastUpdated: "2026-01-22T11:00:00Z",
-  },
-];
+import { NextRequest, NextResponse } from "next/server";
+import {
+  getDocuments,
+  addDocument,
+  toggleDocumentStatus,
+  deleteDocument,
+} from "@/lib/document-store";
 
 export async function GET() {
-  return NextResponse.json({ documents: SAMPLE_DOCUMENTS });
+  return NextResponse.json({ documents: getDocuments() });
 }
 
-export async function POST() {
-  // TODO: handle real document upload + text extraction
-  return NextResponse.json({ message: "Upload not yet implemented" }, { status: 501 });
+export async function POST(req: NextRequest) {
+  const body = await req.json();
+  const { name, wordCount, sections } = body;
+
+  if (!name?.trim()) {
+    return NextResponse.json({ error: "Document name is required" }, { status: 400 });
+  }
+
+  const doc = addDocument({
+    name: name.trim(),
+    wordCount: wordCount ?? 0,
+    sections: sections ?? 0,
+  });
+
+  return NextResponse.json({ document: doc }, { status: 201 });
+}
+
+export async function PATCH(req: NextRequest) {
+  const body = await req.json();
+  const { id, action } = body;
+
+  if (!id) {
+    return NextResponse.json({ error: "Document ID is required" }, { status: 400 });
+  }
+
+  if (action === "toggle") {
+    const doc = toggleDocumentStatus(id);
+    if (!doc) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
+    return NextResponse.json({ document: doc });
+  }
+
+  if (action === "delete") {
+    const deleted = deleteDocument(id);
+    if (!deleted) {
+      return NextResponse.json({ error: "Document not found" }, { status: 404 });
+    }
+    return NextResponse.json({ success: true });
+  }
+
+  return NextResponse.json({ error: "Invalid action" }, { status: 400 });
 }

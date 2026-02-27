@@ -80,7 +80,7 @@ export default function StatsCard({
 
   const className = `group relative flex flex-col rounded-2xl p-5 transition-all ${
     accent
-      ? "bg-slate-900 shadow-lg shadow-slate-900/20"
+      ? "bg-[#102a43] shadow-lg shadow-[#102a43]/20"
       : "border border-slate-100 bg-white shadow-sm hover:border-slate-200 hover:shadow-md"
   }`;
 

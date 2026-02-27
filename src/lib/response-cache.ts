@@ -29,3 +29,19 @@ export function setCachedResponse(
 export function getCacheSize(): number {
   return cache.size;
 }
+
+export function getAllCachedResponses(): {
+  question: string;
+  response: string;
+  source: string;
+  cachedAt: number;
+}[] {
+  return Array.from(cache.entries()).map(([question, entry]) => ({
+    question,
+    ...entry,
+  }));
+}
+
+export function deleteCachedResponse(question: string): boolean {
+  return cache.delete(normalizeKey(question));
+}
