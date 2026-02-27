@@ -1,25 +1,30 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #0f172a;
-}
-
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-inter);
+  --color-background: #ffffff;
+  --color-foreground: #1a1a2e;
+  --font-sans: var(--font-dm);
   --font-serif: var(--font-playfair);
-  --color-navy: #0f172a;
-  --color-navy-light: #1e293b;
-  --color-amber: #d97706;
-  --color-amber-light: #f59e0b;
-  --color-cream: #fefce8;
+  --font-libre: var(--font-libre);
+  --font-cormorant: var(--font-cormorant);
+
+  /* US Flag Palette — direct hex for Tailwind v4 */
+  --color-usa-red: #BF0A30;
+  --color-usa-red-light: #D42A4C;
+  --color-usa-red-muted: #E8899A;
+  --color-usa-blue: #002868;
+  --color-usa-blue-light: #1B4F8A;
+  --color-usa-blue-muted: #7BA3CC;
+  --color-usa-offwhite: #F8F9FC;
+
+  /* Command center soft blue */
+  --color-cmd-bg: #F0F4FA;
+  --color-cmd-card: #FFFFFF;
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--color-background);
+  color: var(--color-foreground);
   font-family: var(--font-sans), system-ui, sans-serif;
 }
 
@@ -27,14 +32,313 @@ html {
   scroll-behavior: smooth;
 }
 
+/* ── iOS 26 Liquid Glass Navbar ──────────────────────────── */
+.glass-nav {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 10px;
+  border-radius: 50px;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(60px) saturate(220%);
+  -webkit-backdrop-filter: blur(60px) saturate(220%);
+  border: 1.5px solid rgba(220, 225, 235, 0.6);
+  box-shadow:
+    0 2px 20px rgba(0, 0, 0, 0.08),
+    0 0 0 0.5px rgba(0, 0, 0, 0.03);
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.glass-nav:hover {
+  background: rgba(255, 255, 255, 0.98);
+  box-shadow:
+    0 4px 30px rgba(0, 0, 0, 0.10),
+    0 0 0 0.5px rgba(0, 0, 0, 0.04);
+}
+
+.glass-nav-item {
+  padding: 8px 18px;
+  border-radius: 50px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #3a3a4a;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  white-space: nowrap;
+  text-decoration: none;
+  cursor: pointer;
+  position: relative;
+}
+
+.glass-nav-item:hover {
+  color: #002868;
+  background: rgba(0, 40, 104, 0.06);
+}
+
+.glass-nav-item-active {
+  background: #002868;
+  color: #ffffff;
+  box-shadow: 0 2px 12px rgba(0, 40, 104, 0.25);
+}
+
+.glass-nav-item-active:hover {
+  background: #1B4F8A;
+  color: #ffffff;
+}
+
+.glass-nav-logo {
+  padding: 4px 12px 4px 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-radius: 50px;
+  transition: all 0.3s ease;
+}
+
+.glass-nav-logo:hover {
+  background: rgba(0, 40, 104, 0.06);
+}
+
+/* ── Hero Color Shade Orbs ───────────────────────────────── */
+.hero-shade-red {
+  position: absolute;
+  border-radius: 50%;
+  background: #BF0A30;
+  opacity: 0.08;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.hero-shade-blue {
+  position: absolute;
+  border-radius: 50%;
+  background: #002868;
+  opacity: 0.07;
+  filter: blur(80px);
+  pointer-events: none;
+}
+
+.hero-shade-white {
+  position: absolute;
+  border-radius: 50%;
+  background: #ffffff;
+  opacity: 0.9;
+  filter: blur(60px);
+  pointer-events: none;
+}
+
+/* ── Sam Showcase Card ───────────────────────────────────── */
+.sam-card {
+  background: #FAFBFD;
+  border: 1px solid #E8ECF2;
+  border-radius: 20px;
+  overflow: hidden;
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.sam-card:hover {
+  border-color: #D0D8E4;
+  box-shadow: 0 12px 40px -8px rgba(0, 40, 104, 0.08);
+}
+
+.sam-avatar-box {
+  background: linear-gradient(145deg, #F0F4FA 0%, #E8ECF4 100%);
+  border: 1px solid #E0E5EE;
+  border-radius: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.sam-timeline-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #CBD5E1;
+  flex-shrink: 0;
+}
+
+.sam-timeline-dot-active {
+  background: #002868;
+  box-shadow: 0 0 0 3px rgba(0, 40, 104, 0.15);
+}
+
+.sam-timeline-dot-red {
+  background: #BF0A30;
+  box-shadow: 0 0 0 3px rgba(191, 10, 48, 0.15);
+}
+
+.sam-success-bar {
+  background: #F0FDF4;
+  border: 1px solid #BBF7D0;
+  border-radius: 12px;
+  padding: 12px 16px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* ── Reveal Animations ─────────────────────────────────────── */
 .reveal {
   opacity: 0;
-  transform: translateY(30px);
-  transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.8s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(40px);
+  transition: opacity 0.9s cubic-bezier(0.16, 1, 0.3, 1),
+    transform 0.9s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .reveal-visible {
   opacity: 1;
   transform: translateY(0);
+}
+
+/* ── Star Pattern Background ───────────────────────────────── */
+.stars-pattern {
+  background-image: radial-gradient(circle, #002868 1.5px, transparent 1.5px);
+  background-size: 40px 40px;
+  opacity: 0.15;
+}
+
+/* ── Stripe Accent ─────────────────────────────────────────── */
+.stripe-accent {
+  background: repeating-linear-gradient(
+    0deg,
+    #BF0A30,
+    #BF0A30 3px,
+    transparent 3px,
+    transparent 18px
+  );
+  width: 4px;
+}
+
+/* ── Dotted Bento Card Styles ─────────────────────────────── */
+.dotted-bento {
+  background: #FFFFFF;
+  border: 2px dashed rgba(0, 40, 104, 0.15);
+  border-radius: 20px;
+  padding: 2rem;
+  position: relative;
+  overflow: hidden;
+  transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.dotted-bento:hover {
+  border-color: rgba(0, 40, 104, 0.3);
+  transform: translateY(-3px);
+  box-shadow: 0 12px 40px -10px rgba(0, 40, 104, 0.1);
+}
+
+.dotted-bento-red {
+  border-color: rgba(191, 10, 48, 0.15);
+}
+
+.dotted-bento-red:hover {
+  border-color: rgba(191, 10, 48, 0.3);
+  box-shadow: 0 12px 40px -10px rgba(191, 10, 48, 0.1);
+}
+
+/* Red dotted border for alternating effect */
+.dotted-bento-red-border {
+  border: 2px dashed rgba(191, 10, 48, 0.2);
+}
+
+.dotted-bento-red-border:hover {
+  border-color: rgba(191, 10, 48, 0.4);
+  box-shadow: 0 12px 40px -10px rgba(191, 10, 48, 0.1);
+}
+
+/* Simple clean card - no internal dots */
+
+/* ── Animated Gradient Border ──────────────────────────────── */
+@keyframes shimmer {
+  0% { background-position: -200% center; }
+  100% { background-position: 200% center; }
+}
+
+.shimmer-border {
+  background: linear-gradient(
+    90deg,
+    #002868 0%,
+    #BF0A30 25%,
+    #002868 50%,
+    #BF0A30 75%,
+    #002868 100%
+  );
+  background-size: 200% auto;
+  animation: shimmer 4s linear infinite;
+}
+
+/* ── Floating Star Keyframes ───────────────────────────────── */
+@keyframes float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  50% { transform: translateY(-8px) rotate(3deg); }
+}
+
+.float-slow {
+  animation: float 6s ease-in-out infinite;
+}
+
+.float-medium {
+  animation: float 4s ease-in-out infinite;
+  animation-delay: 1s;
+}
+
+/* ── Pulse Ring ────────────────────────────────────────────── */
+@keyframes pulse-ring {
+  0% { transform: scale(1); opacity: 0.6; }
+  100% { transform: scale(1.5); opacity: 0; }
+}
+
+.pulse-ring::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 2px solid #BF0A30;
+  animation: pulse-ring 2s ease-out infinite;
+}
+
+/* ── Section Divider ───────────────────────────────────────── */
+.section-divider {
+  height: 3px;
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    #BF0A30 20%,
+    #002868 50%,
+    #BF0A30 80%,
+    transparent 100%
+  );
+  opacity: 0.4;
+
+}
+
+
+/* ── Light Card Hover ──────────────────────────────────────── */
+.light-card-red {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.light-card-red:hover {
+  box-shadow: 0 8px 40px -8px rgba(191, 10, 48, 0.15),
+              0 0 0 1px rgba(191, 10, 48, 0.08);
+  transform: translateY(-2px);
+}
+
+.light-card-blue {
+  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.light-card-blue:hover {
+  box-shadow: 0 8px 40px -8px rgba(0, 40, 104, 0.15),
+              0 0 0 1px rgba(0, 40, 104, 0.08);
+  transform: translateY(-2px);
+}
+
+@keyframes breathing {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
 }

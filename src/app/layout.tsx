@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { Inter, Playfair_Display, Bricolage_Grotesque, JetBrains_Mono } from "next/font/google";
+import { Inter, Playfair_Display, Bricolage_Grotesque, JetBrains_Mono, Libre_Baskerville, DM_Sans, Cormorant_Garamond } from "next/font/google";
 import "./globals.css";
 
 const inter = Inter({
@@ -22,6 +22,24 @@ const jetbrains = JetBrains_Mono({
   subsets: ["latin"],
 });
 
+const libreBaskerville = Libre_Baskerville({
+  variable: "--font-libre",
+  subsets: ["latin"],
+  weight: ["400", "700"],
+});
+
+const dmSans = DM_Sans({
+  variable: "--font-dm",
+  subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+});
+
+const cormorant = Cormorant_Garamond({
+  variable: "--font-cormorant",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+});
+
 export const metadata: Metadata = {
   title: "Civiq — AI-Powered Election Assistant",
   description:
@@ -36,7 +54,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body
-        className={`${inter.variable} ${playfair.variable} ${bricolage.variable} ${jetbrains.variable} antialiased`}
+        className={`${inter.variable} ${playfair.variable} ${bricolage.variable} ${jetbrains.variable} ${libreBaskerville.variable} ${dmSans.variable} ${cormorant.variable} antialiased`}
       >
         {children}
       </body>
