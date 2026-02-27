@@ -1,0 +1,46 @@
+{
+  "id": "manual-2026",
+  "title": "Poll Worker Training Manual 2026",
+  "sections": [
+    {
+      "id": "s1",
+      "title": "Opening the Polls",
+      "content": "Poll workers must arrive at the polling location by 5:30 AM. Begin setup procedures including: powering on all voting machines, verifying ballot supplies, posting required signage, and testing the accessible voting unit (AVU). The polling location must be ready for voters by 6:00 AM."
+    },
+    {
+      "id": "s2",
+      "title": "Voter Check-In Procedures",
+      "content": "When a voter arrives: 1) Greet the voter. 2) Ask for their name and address. 3) Look up the voter in the electronic poll book. 4) Verify identification per state requirements. 5) Have the voter sign the poll book. 6) Issue the correct ballot style for their precinct. If a voter's name is not found, offer a provisional ballot and explain the process."
+    },
+    {
+      "id": "s3",
+      "title": "Voter ID Requirements",
+      "content": "Acceptable forms of ID include: valid Arizona driver's license, Arizona nonoperating identification license, tribal enrollment card, or any two of the following: utility bill, bank statement, government-issued check, paycheck, or any other government document showing name and address."
+    },
+    {
+      "id": "s4",
+      "title": "Provisional Ballots",
+      "content": "A provisional ballot must be offered when: the voter's name does not appear in the poll book, the voter does not have acceptable ID, or there is a question about the voter's eligibility. The voter completes a provisional ballot affidavit. Seal the provisional ballot in the green envelope. Record the provisional ballot number in the log."
+    },
+    {
+      "id": "s5",
+      "title": "Accessible Voting",
+      "content": "Every polling location must have at least one accessible voting unit (AVU). Poll workers should be prepared to assist voters with disabilities. Offer the AVU to any voter who requests it. The AVU includes audio ballot capability, sip-and-puff device support, and large print display options. Never assume a voter does or does not need assistance."
+    },
+    {
+      "id": "s6",
+      "title": "Closing the Polls",
+      "content": "At 7:00 PM, announce that the polls are closing. Any voter in line at 7:00 PM must be allowed to vote. After the last voter has voted: 1) Shut down all voting machines per the posted procedure. 2) Reconcile the number of voters checked in with ballots cast. 3) Seal all ballots in the designated containers. 4) Complete all required paperwork. 5) Transport materials to the central counting facility."
+    },
+    {
+      "id": "s7",
+      "title": "Emergency Procedures",
+      "content": "In case of power outage: use emergency ballots (paper ballots in the emergency supply kit). In case of equipment malfunction: call the Election Day hotline immediately at (555) 123-4567. In case of a security threat: call 911 first, then the Election Day hotline. Document all incidents on the Incident Report Form."
+    },
+    {
+      "id": "s8",
+      "title": "Electioneering Rules",
+      "content": "No campaign materials, signs, or apparel are permitted within 75 feet of the polling location entrance. If a voter is wearing campaign apparel, they must still be allowed to vote — do not turn them away. If someone is electioneering within the restricted zone, politely ask them to move beyond the 75-foot boundary. If they refuse, contact the Election Day hotline."
+    }
+  ]
+}

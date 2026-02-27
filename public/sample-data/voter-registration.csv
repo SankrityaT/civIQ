@@ -1,0 +1,51 @@
+id,first_name,last_name,age,address,city,precinct,zip,languages,registered_since,party,email,phone,previous_poll_worker,availability
+VR001,Maria,Garcia,34,123 Oak St,Phoenix,PCT-12,85001,"English,Spanish",2018-03-15,Independent,maria.g@email.com,555-0101,false,available
+VR002,James,Wilson,67,456 Elm Ave,Tempe,PCT-08,85281,English,2004-11-02,Republican,j.wilson@email.com,555-0102,true,available
+VR003,Aisha,Johnson,29,789 Pine Rd,Scottsdale,PCT-03,85251,English,2020-08-10,Democrat,aisha.j@email.com,555-0103,false,available
+VR004,Carlos,Martinez,52,321 Maple Dr,Mesa,PCT-17,85201,"English,Spanish",2011-05-22,Independent,c.martinez@email.com,555-0104,true,available
+VR005,Linda,Chen,45,654 Cedar Ln,Chandler,PCT-05,85224,English,2015-09-30,Democrat,linda.c@email.com,555-0105,false,available
+VR006,Robert,Davis,71,987 Birch Blvd,Phoenix,PCT-12,85003,English,2001-01-15,Republican,r.davis@email.com,555-0106,true,available
+VR007,Sofia,Rodriguez,38,"456 Desert View, Apt 2",Tempe,PCT-09,85282,"English,Spanish",2017-06-18,Democrat,sofia.r@email.com,555-0107,false,available
+VR008,William,Thompson,63,123 Cactus Way,Mesa,PCT-14,85204,English,2008-04-07,Republican,w.thompson@email.com,555-0108,true,available
+VR009,Fatima,Al-Hassan,31,789 Saguaro St,Chandler,PCT-06,85225,"English,Arabic",2021-02-28,Independent,fatima.a@email.com,555-0109,false,available
+VR010,Michael,Brown,55,456 Palo Verde Dr,Scottsdale,PCT-02,85250,English,2006-10-14,Democrat,m.brown@email.com,555-0110,true,available
+VR011,Rosa,Hernandez,41,"321 Mesquite Ln, #3",Phoenix,PCT-11,85002,"English,Spanish",2013-07-25,Independent,rosa.h@email.com,555-0111,false,available
+VR012,David,Lee,58,654 Ironwood Ave,Mesa,PCT-16,85206,English,2003-03-11,Republican,d.lee@email.com,555-0112,true,available
+VR013,Patricia,Williams,44,987 Ocotillo Rd,Tempe,PCT-07,85283,English,2014-12-03,Democrat,p.williams@email.com,555-0113,false,available
+VR014,Juan,Lopez,36,123 Agave Blvd,Chandler,PCT-04,85226,"English,Spanish",2019-08-19,Independent,juan.l@email.com,555-0114,false,available
+VR015,Angela,Martinez,62,456 Prickly Pear St,Phoenix,PCT-13,85004,English,2005-05-30,Republican,angela.m@email.com,555-0115,true,available
+VR016,Kevin,Anderson,27,789 Cholla Way,Scottsdale,PCT-01,85252,English,2022-01-15,Democrat,kevin.a@email.com,555-0116,false,available
+VR017,Michelle,Taylor,49,321 Barrel Cactus Dr,Mesa,PCT-15,85207,"English,Spanish",2010-09-22,Independent,michelle.t@email.com,555-0117,true,available
+VR018,Thomas,Jackson,66,654 Creosote Ln,Tempe,PCT-10,85284,English,2002-07-08,Republican,t.jackson@email.com,555-0118,true,available
+VR019,Sandra,White,39,987 Desert Willow Ave,Chandler,PCT-05,85224,English,2016-11-17,Democrat,sandra.w@email.com,555-0119,false,available
+VR020,Jose,Ramirez,53,123 Brittlebush Rd,Phoenix,PCT-12,85001,"English,Spanish",2009-04-03,Independent,jose.r@email.com,555-0120,true,available
+VR021,Dorothy,Harris,74,456 Paloverde Blvd,Mesa,PCT-14,85205,English,1998-06-27,Republican,d.harris@email.com,555-0121,true,available
+VR022,Christopher,Clark,32,789 Lantana St,Scottsdale,PCT-03,85253,English,2020-10-05,Democrat,c.clark@email.com,555-0122,false,available
+VR023,Lisa,Robinson,46,321 Bougainvillea Ln,Tempe,PCT-08,85281,English,2012-03-14,Independent,lisa.r@email.com,555-0123,false,available
+VR024,Daniel,Walker,60,654 Oleander Ave,Chandler,PCT-06,85225,English,2004-08-21,Republican,d.walker@email.com,555-0124,true,available
+VR025,Nancy,Hall,37,987 Hibiscus Way,Phoenix,PCT-11,85002,"English,Spanish",2018-05-16,Democrat,nancy.h@email.com,555-0125,false,available
+VR026,Paul,Allen,51,123 Jasmine Dr,Mesa,PCT-17,85201,English,2011-12-09,Independent,paul.a@email.com,555-0126,false,available
+VR027,Karen,Young,43,456 Honeysuckle Rd,Scottsdale,PCT-02,85251,English,2015-07-02,Republican,karen.y@email.com,555-0127,true,available
+VR028,Mark,Hernandez,28,789 Lavender Ln,Tempe,PCT-09,85282,"English,Spanish",2021-09-11,Democrat,mark.h@email.com,555-0128,false,available
+VR029,Betty,King,69,321 Rosemary Blvd,Chandler,PCT-04,85226,English,2000-02-14,Republican,betty.k@email.com,555-0129,true,available
+VR030,Steven,Wright,35,654 Thyme St,Phoenix,PCT-13,85004,English,2019-04-25,Independent,steven.w@email.com,555-0130,false,available
+VR031,Helen,Scott,57,987 Sage Ave,Mesa,PCT-15,85207,English,2007-11-18,Democrat,helen.s@email.com,555-0131,true,available
+VR032,Kenneth,Green,40,123 Basil Way,Scottsdale,PCT-01,85252,English,2016-06-07,Republican,k.green@email.com,555-0132,false,available
+VR033,Sharon,Adams,65,456 Mint Ln,Tempe,PCT-10,85284,English,2003-09-29,Independent,sharon.a@email.com,555-0133,true,available
+VR034,Andrew,Baker,30,789 Parsley Rd,Chandler,PCT-05,85224,"English,Spanish",2022-03-20,Democrat,andrew.b@email.com,555-0134,false,available
+VR035,Donna,Gonzalez,48,321 Cilantro Blvd,Phoenix,PCT-12,85003,English,2013-01-12,Republican,donna.g@email.com,555-0135,false,available
+VR036,Joshua,Nelson,23,654 Oregano St,Mesa,PCT-16,85206,English,2023-07-04,Democrat,joshua.n@email.com,555-0136,false,available
+VR037,Carol,Carter,72,987 Dill Ave,Scottsdale,PCT-03,85253,English,1999-10-31,Republican,carol.c@email.com,555-0137,true,available
+VR038,Ryan,Mitchell,33,123 Fennel Ln,Tempe,PCT-07,85283,English,2020-12-15,Independent,ryan.m@email.com,555-0138,false,available
+VR039,Ruth,Perez,59,456 Cumin Way,Chandler,PCT-06,85225,"English,Spanish",2006-05-08,Democrat,ruth.p@email.com,555-0139,true,available
+VR040,Jacob,Roberts,42,789 Turmeric Dr,Phoenix,PCT-11,85002,English,2014-08-23,Republican,jacob.r@email.com,555-0140,false,available
+VR041,Frances,Turner,56,321 Paprika Rd,Mesa,PCT-14,85205,English,2008-03-17,Independent,frances.t@email.com,555-0141,true,available
+VR042,Brandon,Phillips,26,654 Saffron Blvd,Scottsdale,PCT-02,85250,English,2022-11-01,Democrat,brandon.p@email.com,555-0142,false,available
+VR043,Joan,Campbell,68,987 Cardamom Ln,Tempe,PCT-08,85281,English,2001-06-14,Republican,joan.c@email.com,555-0143,true,available
+VR044,Samuel,Parker,47,123 Cinnamon St,Chandler,PCT-04,85226,"English,Spanish",2012-09-05,Independent,samuel.p@email.com,555-0144,true,available
+VR045,Evelyn,Evans,38,456 Vanilla Way,Phoenix,PCT-13,85004,English,2017-02-22,Democrat,evelyn.e@email.com,555-0145,false,available
+VR046,Gregory,Edwards,61,789 Nutmeg Ave,Mesa,PCT-17,85201,English,2005-07-19,Republican,gregory.e@email.com,555-0146,true,available
+VR047,Catherine,Collins,44,321 Clove Dr,Scottsdale,PCT-01,85252,English,2015-10-08,Independent,catherine.c@email.com,555-0147,false,available
+VR048,Raymond,Stewart,50,654 Allspice Ln,Tempe,PCT-09,85282,"English,Spanish",2010-04-27,Democrat,raymond.s@email.com,555-0148,false,available
+VR049,Anna,Sanchez,76,987 Ginger Blvd,Chandler,PCT-05,85224,English,1997-12-03,Republican,anna.s@email.com,555-0149,true,available
+VR050,Dennis,Morris,39,123 Pepper Rd,Phoenix,PCT-12,85001,English,2018-08-14,Independent,dennis.m@email.com,555-0150,false,available
