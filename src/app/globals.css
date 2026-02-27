@@ -337,3 +337,8 @@ html {
               0 0 0 1px rgba(0, 40, 104, 0.08);
   transform: translateY(-2px);
 }
+
+@keyframes breathing {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
