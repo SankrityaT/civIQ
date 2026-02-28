@@ -4,35 +4,8 @@
 
 import { TrainingDocument, DocumentStatus } from "@/types";
 
-const documents: TrainingDocument[] = [
-  {
-    id: "doc-001",
-    name: "Poll Worker Training Manual 2026",
-    status: "active",
-    wordCount: 1240,
-    sections: 8,
-    uploadedAt: "2026-01-15T09:00:00Z",
-    lastUpdated: "2026-02-01T14:30:00Z",
-  },
-  {
-    id: "doc-002",
-    name: "Election Day Procedures Guide",
-    status: "active",
-    wordCount: 820,
-    sections: 5,
-    uploadedAt: "2026-01-20T10:00:00Z",
-    lastUpdated: "2026-01-20T10:00:00Z",
-  },
-  {
-    id: "doc-003",
-    name: "Voter ID Requirements by State",
-    status: "inactive",
-    wordCount: 490,
-    sections: 3,
-    uploadedAt: "2026-01-22T11:00:00Z",
-    lastUpdated: "2026-01-22T11:00:00Z",
-  },
-];
+const documents: TrainingDocument[] = [];
+const deletedSidecarNames = new Set<string>();
 
 export function getDocuments(): TrainingDocument[] {
   return [...documents];
@@ -52,6 +25,31 @@ export function toggleDocumentStatus(id: string): TrainingDocument | null {
   doc.status = doc.status === "active" ? "inactive" : "active";
   doc.lastUpdated = new Date().toISOString();
   return { ...doc };
+}
+
+export function isSidecarDocDeleted(name: string): boolean {
+  return deletedSidecarNames.has(name);
+}
+
+export function upsertSidecarDocument(name: string, sectionCount: number, pageCount: number): TrainingDocument {
+  if (deletedSidecarNames.has(name)) return { id: "", name, status: "inactive" as DocumentStatus, wordCount: 0, sections: 0, uploadedAt: "", lastUpdated: "" };
+  const existing = documents.find((d) => d.name === name);
+  if (existing) {
+    existing.sections = sectionCount;
+    existing.lastUpdated = existing.lastUpdated;
+    return { ...existing };
+  }
+  const doc: TrainingDocument = {
+    id: `sidecar-${name.replace(/[^a-z0-9]/gi, "-").toLowerCase().slice(0, 20)}`,
+    name,
+    status: "active" as DocumentStatus,
+    wordCount: pageCount * 200,
+    sections: sectionCount,
+    uploadedAt: new Date().toISOString(),
+    lastUpdated: new Date().toISOString(),
+  };
+  documents.push(doc);
+  return doc;
 }
 
 export function addDocument(params: {
@@ -75,6 +73,10 @@ export function addDocument(params: {
 export function deleteDocument(id: string): boolean {
   const idx = documents.findIndex((d) => d.id === id);
   if (idx === -1) return false;
-  documents.splice(idx, 1);
+  const [removed] = documents.splice(idx, 1);
+  // Mark sidecar-synced docs as deleted so they won't re-appear on next GET
+  if (removed.id.startsWith("sidecar-")) {
+    deletedSidecarNames.add(removed.name);
+  }
   return true;
 }

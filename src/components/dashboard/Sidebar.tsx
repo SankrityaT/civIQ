@@ -8,31 +8,29 @@ import Link from "next/link";
 import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
-  LayoutDashboard,
+  House,
   FileText,
-  FlaskConical,
+  Flask,
   Users,
-  ClipboardList,
-  Settings,
-  HelpCircle,
-  ShieldCheck,
-  Menu,
+  Gear,
+  Question,
+  List,
   X,
-  ChevronLeft,
-  ChevronRight,
-} from "lucide-react";
+  CaretLeft,
+  CaretRight,
+  ShieldCheck,
+} from "@phosphor-icons/react";
 
 const MENU_ITEMS = [
-  { label: "Dashboard",  href: "/dashboard",           icon: LayoutDashboard },
+  { label: "Dashboard",  href: "/dashboard",           icon: House },
   { label: "Documents",  href: "/dashboard/documents", icon: FileText },
-  { label: "Test AI",    href: "/dashboard/test",      icon: FlaskConical },
+  { label: "AI Center",  href: "/dashboard/test",      icon: Flask },
   { label: "Recruit",    href: "/dashboard/recruit",   icon: Users },
-  { label: "Audit Log",  href: "/dashboard/audit",     icon: ClipboardList },
 ];
 
 const GENERAL_ITEMS = [
-  { label: "Settings", href: "#", icon: Settings },
-  { label: "Help",     href: "#", icon: HelpCircle },
+  { label: "Settings", href: "#", icon: Gear },
+  { label: "Help",     href: "#", icon: Question },
 ];
 
 export default function Sidebar() {
@@ -48,7 +46,7 @@ export default function Sidebar() {
         className="fixed left-4 top-4 z-40 flex h-10 w-10 items-center justify-center rounded-xl bg-white/80 backdrop-blur-xl border border-slate-200/60 text-slate-700 shadow-lg lg:hidden"
         aria-label="Open menu"
       >
-        <Menu className="h-5 w-5" />
+        <List className="h-5 w-5" />
       </button>
 
       {/* Mobile backdrop */}
@@ -102,7 +100,7 @@ export default function Sidebar() {
               }}
               aria-label="Collapse sidebar"
             >
-              <ChevronLeft className="h-4 w-4" />
+              <CaretLeft className="h-4 w-4" />
             </button>
           )}
         </div>
@@ -198,7 +196,7 @@ export default function Sidebar() {
               }}
               aria-label="Expand sidebar"
             >
-              <ChevronRight className="h-4 w-4" />
+              <CaretRight className="h-4 w-4" />
             </button>
           </div>
         )}
@@ -215,7 +213,7 @@ export default function Sidebar() {
                   <p className="truncate text-[12px] font-medium text-slate-900">Election Official</p>
                   <p className="truncate text-[10px] text-slate-400">Maricopa County</p>
                 </div>
-                <ShieldCheck className="h-4 w-4 flex-shrink-0 text-amber-500" />
+                <ShieldCheck className="h-4 w-4 flex-shrink-0 text-amber-500" weight="fill" />
               </>
             )}
           </div>

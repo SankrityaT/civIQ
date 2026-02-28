@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGroqClient } from "@/lib/groq";
-import { buildSystemPrompt } from "@/lib/system-prompt";
+import { getRAGContext, buildRAGSystemPrompt } from "@/lib/system-prompt-rag";
 import { getCachedResponse, setCachedResponse } from "@/lib/response-cache";
 import { logInteraction } from "@/lib/audit-logger";
 import { GROQ_MODEL } from "@/lib/constants";
@@ -72,11 +72,12 @@ export async function POST(req: NextRequest) {
     });
   }
 
+  const { context: ragContext } = await getRAGContext(question);
   const groq = getGroqClient();
   const completion = await groq.chat.completions.create({
     model: GROQ_MODEL,
     messages: [
-      { role: "system", content: buildSystemPrompt(language) },
+      { role: "system", content: buildRAGSystemPrompt(language, ragContext, true) },
       { role: "user", content: question },
     ],
     temperature: 0.1,

@@ -39,3 +39,12 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Python RAG sidecar
+rag-sidecar/.venv/
+rag-sidecar/.cache/
+__pycache__/
+*.py[cod]
+*.pyo
+*.egg-info/
+.Python

@@ -25,7 +25,7 @@ export default function RecruitPage() {
   }
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-7 pt-8">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>

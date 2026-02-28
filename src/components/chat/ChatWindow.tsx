@@ -2,7 +2,11 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Image from "next/image";
-import { Language, Message } from "@/types";
+import dynamic from "next/dynamic";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import { Language, Message, SourceMeta } from "@/types";
+const SourceViewer = dynamic(() => import("./SourceViewer"), { ssr: false });
 import {
   PaperPlaneRight,
   SealCheck,
@@ -18,7 +22,6 @@ import {
   Cpu,
   BookOpen,
   CaretRight,
-  Sparkle,
   Graph,
   Clock,
   IdentificationCard,
@@ -26,6 +29,7 @@ import {
   Lightning,
   Wheelchair,
   Prohibit,
+  ArrowRight,
 } from "@phosphor-icons/react";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -48,13 +52,34 @@ const SUGGESTED_EN = [
   { q: "What are the electioneering rules?", icon: Prohibit, category: "Rules" },
 ];
 
-const SUGGESTED_ES = [
-  { q: "¿A qué hora deben llegar los trabajadores?", icon: Clock, category: "Procedimientos" },
-  { q: "¿Qué ID necesitan los votantes?", icon: IdentificationCard, category: "ID" },
-  { q: "¿Cómo manejo una boleta provisional?", icon: ClipboardText, category: "Boletas" },
-  { q: "¿Qué pasa si el equipo falla?", icon: Lightning, category: "Emergencia" },
-  { q: "¿Cómo ayudo a un votante con discapacidad?", icon: Wheelchair, category: "Accesibilidad" },
-  { q: "¿Cuáles son las reglas de campaña?", icon: Prohibit, category: "Reglas" },
+// Icon mapping from string name to component
+const iconMap: Record<string, React.ElementType> = {
+  Clock,
+  IdentificationCard,
+  ClipboardText,
+  Lightning,
+  Wheelchair,
+  Prohibit,
+  Question: Clock,
+};
+
+// Fallback defaults if API fails
+const SUGGESTED_EN_DEFAULT = [
+  { q: "What time should poll workers arrive?", qEs: "¿A qué hora deben llegar?", icon: Clock, category: "Procedures", categoryEs: "Procedimientos" },
+  { q: "What ID do voters need to show?", qEs: "¿Qué identificación necesitan?", icon: IdentificationCard, category: "Voter ID", categoryEs: "Identificación" },
+  { q: "How do I handle a provisional ballot?", qEs: "¿Cómo manejo una boleta provisional?", icon: ClipboardText, category: "Ballots", categoryEs: "Boletas" },
+  { q: "What if voting equipment breaks?", qEs: "¿Qué pasa si el equipo falla?", icon: Lightning, category: "Emergency", categoryEs: "Emergencia" },
+  { q: "How do I assist a voter with a disability?", qEs: "¿Cómo ayudo a un votante con discapacidad?", icon: Wheelchair, category: "Accessibility", categoryEs: "Accesibilidad" },
+  { q: "What are the electioneering rules?", qEs: "¿Cuáles son las reglas de proselitismo?", icon: Prohibit, category: "Rules", categoryEs: "Reglas" },
+];
+
+const SUGGESTED_ES_DEFAULT = [
+  { q: "What time should poll workers arrive?", qEs: "¿A qué hora deben llegar?", icon: Clock, category: "Procedures", categoryEs: "Procedimientos" },
+  { q: "What ID do voters need to show?", qEs: "¿Qué identificación necesitan?", icon: IdentificationCard, category: "Voter ID", categoryEs: "Identificación" },
+  { q: "How do I handle a provisional ballot?", qEs: "¿Cómo manejo una boleta provisional?", icon: ClipboardText, category: "Ballots", categoryEs: "Boletas" },
+  { q: "What if voting equipment breaks?", qEs: "¿Qué pasa si el equipo falla?", icon: Lightning, category: "Emergency", categoryEs: "Emergencia" },
+  { q: "How do I assist a voter with a disability?", qEs: "¿Cómo ayudo a un votante con discapacidad?", icon: Wheelchair, category: "Accessibility", categoryEs: "Accesibilidad" },
+  { q: "What are the electioneering rules?", qEs: "¿Cuáles son las reglas de proselitismo?", icon: Prohibit, category: "Rules", categoryEs: "Reglas" },
 ];
 
 const TOOL_STEPS_EN: Omit<ToolStep, "status">[] = [
@@ -71,16 +96,21 @@ const TOOL_STEPS_ES: Omit<ToolStep, "status">[] = [
   { id: "generate", label: "Generando respuesta…", icon: Cpu },
 ];
 
-const SECTION_LINKS: Record<string, string> = {
-  "Opening the Polls": "#section-1",
-  "Voter Check-In Procedures": "#section-2",
-  "Voter ID Requirements": "#section-3",
-  "Provisional Ballots": "#section-4",
-  "Accessible Voting": "#section-5",
-  "Closing the Polls": "#section-6",
-  "Emergency Procedures": "#section-7",
-  "Electioneering Rules": "#section-8",
-};
+const FOLLOW_UP_SUGGESTIONS_EN = [
+  "Can you explain that in even simpler terms?",
+  "What should I do if I'm not sure?",
+  "What happens if I make a mistake?",
+  "Who should I call for help?",
+  "Can you give me an example?",
+];
+
+const FOLLOW_UP_SUGGESTIONS_ES = [
+  "¿Puedes explicarlo de forma más sencilla?",
+  "¿Qué hago si no estoy seguro/a?",
+  "¿Qué pasa si cometo un error?",
+  "¿A quién llamo para ayuda?",
+  "¿Puedes darme un ejemplo?",
+];
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
@@ -146,313 +176,333 @@ function ToolCallPanel({ steps, language }: { steps: ToolStep[]; language: Langu
   );
 }
 
+interface GNode { id: string; label: string; type: "document" | "section" | "concept"; x: number; y: number; vx: number; vy: number; size: number; }
+interface GEdge { source: string; target: string; weight: number; }
+
+const NODE_COLORS = { document: "#f59e0b", section: "#6366f1", concept: "#10b981" };
+const NODE_RADII  = { document: 8, section: 5, concept: 3 };
+
 function KnowledgePanel({ isActive, query }: { isActive: boolean; query: string }) {
-  const [tick, setTick] = useState(0);
-  const [nodePositions, setNodePositions] = useState([
-    { x: 50, y: 48 }, // hub
-    { x: 50, y: 14 }, { x: 78, y: 28 }, { x: 84, y: 58 }, { x: 68, y: 80 },
-    { x: 36, y: 84 }, { x: 18, y: 65 }, { x: 14, y: 36 }, { x: 30, y: 18 },
-    { x: 66, y: 16 }, { x: 88, y: 42 },
-  ]);
-  const [dragging, setDragging] = useState<number | null>(null);
-  const [hoveredNode, setHoveredNode] = useState<number | null>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const [nodes, setNodes] = useState<GNode[]>([]);
+  const [edges, setEdges] = useState<GEdge[]>([]);
+  const [meta, setMeta] = useState({ totalNodes: 0, totalEdges: 0, live: false });
+  const [hoveredId, setHoveredId] = useState<string | null>(null);
+  const [draggingNode, setDraggingNode] = useState<string | null>(null);
+  const [transform, setTransform] = useState({ x: 0, y: 0, k: 1 });
+  const [isPanning, setIsPanning] = useState(false);
+  const requestRef = useRef<number>(null);
+  const lastMousePos = useRef({ x: 0, y: 0 });
+
+  // Fetch real graph data
+  useEffect(() => {
+    fetch("/api/knowledge-graph")
+      .then(r => r.json())
+      .then(data => {
+        if (!data.nodes?.length) return;
+        const initialized: GNode[] = data.nodes.map((n: any) => ({
+          ...n,
+          x: (Math.random() - 0.5) * 400,
+          y: (Math.random() - 0.5) * 400,
+          vx: 0, vy: 0,
+          size: NODE_RADII[n.type as keyof typeof NODE_RADII] ?? 4,
+        }));
+        setNodes(initialized);
+        setEdges(data.edges);
+        setMeta(data.meta);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Simulation Loop
+  const animate = useCallback(() => {
+    setNodes(prevNodes => {
+      if (prevNodes.length === 0) return prevNodes;
+      const newNodes = prevNodes.map(n => ({ ...n }));
+      const idxMap = new Map(newNodes.map((n, i) => [n.id, i]));
+
+      // Constants
+      const alpha = 0.1;
+      const charge = -150;
+      const linkStrength = 0.05;
+      const centerStrength = 0.01;
+
+      // 1. Repulsion (Charge)
+      for (let i = 0; i < newNodes.length; i++) {
+        for (let j = i + 1; j < newNodes.length; j++) {
+          const dx = newNodes[i].x - newNodes[j].x || 0.1;
+          const dy = newNodes[i].y - newNodes[j].y || 0.1;
+          const dist2 = dx * dx + dy * dy;
+          const dist = Math.sqrt(dist2);
+          const force = (charge * alpha) / dist2;
+          newNodes[i].vx -= (dx / dist) * force;
+          newNodes[i].vy -= (dy / dist) * force;
+          newNodes[j].vx += (dx / dist) * force;
+          newNodes[j].vy += (dy / dist) * force;
+        }
+      }
+
+      // 2. Attraction (Links)
+      for (const edge of edges) {
+        const sourceIdx = idxMap.get(edge.source);
+        const targetIdx = idxMap.get(edge.target);
+        if (sourceIdx === undefined || targetIdx === undefined) continue;
+        const s = newNodes[sourceIdx];
+        const t = newNodes[targetIdx];
+        const dx = t.x - s.x || 0.1;
+        const dy = t.y - s.y || 0.1;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const desiredDist = s.type === "document" ? 60 : 30;
+        const force = (dist - desiredDist) * linkStrength * alpha * edge.weight;
+        const fx = (dx / dist) * force;
+        const fy = (dy / dist) * force;
+        s.vx += fx; s.vy += fy;
+        t.vx -= fx; t.vy -= fy;
+      }
+
+      // 3. Center Gravity
+      for (const n of newNodes) {
+        n.vx -= n.x * centerStrength * alpha;
+        n.vy -= n.y * centerStrength * alpha;
+      }
+
+      // 4. Update Positions
+      for (const n of newNodes) {
+        if (n.id === draggingNode) {
+          n.vx = 0; n.vy = 0;
+          continue;
+        }
+        n.x += n.vx;
+        n.y += n.vy;
+        n.vx *= 0.9; // Friction
+        n.vy *= 0.9;
+      }
+
+      return newNodes;
+    });
+    requestRef.current = requestAnimationFrame(animate);
+  }, [edges, draggingNode]);
 
   useEffect(() => {
-    if (!isActive) return;
-    const id = setInterval(() => setTick((t) => t + 1), 700);
-    return () => clearInterval(id);
-  }, [isActive]);
+    requestRef.current = requestAnimationFrame(animate);
+    return () => { if (requestRef.current) cancelAnimationFrame(requestRef.current); };
+  }, [animate]);
 
-  const nodes = [
-    { label: "Training\nManual", r: 6, type: "hub", color: "#3C3B6E" },
-    { label: "Check-In", r: 3.5, type: "red", color: "#ef4444" },
-    { label: "Voter ID", r: 3.5, type: "blue", color: "#3b82f6" },
-    { label: "Ballots", r: 3, type: "red", color: "#dc2626" },
-    { label: "Provisional", r: 3, type: "blue", color: "#2563eb" },
-    { label: "Emergency", r: 3, type: "red", color: "#B22234" },
-    { label: "Closing", r: 3, type: "blue", color: "#1d4ed8" },
-    { label: "Accessible", r: 3, type: "red", color: "#f87171" },
-    { label: "Signage", r: 2.5, type: "blue", color: "#60a5fa" },
-    { label: "Hotline", r: 2.5, type: "red", color: "#fca5a5" },
-    { label: "AVU", r: 2.5, type: "blue", color: "#93c5fd" },
-  ];
-
-  const crossEdges = [
-    [1, 2], [2, 3], [3, 4], [4, 5], [5, 6], [6, 7], [7, 8], [8, 1],
-    [1, 9], [2, 10], [3, 10], [9, 10],
-  ];
-
-  const activeLeafIdx = isActive ? (tick % (nodes.length - 1)) + 1 : -1;
-
-  const handleMouseDown = (e: React.MouseEvent<SVGCircleElement>, idx: number) => {
+  // Interactivity Handlers
+  const handleWheel = (e: React.WheelEvent) => {
     e.preventDefault();
-    setDragging(idx);
+    const scaleFactor = e.deltaY > 0 ? 0.9 : 1.1;
+    setTransform(prev => ({
+      ...prev,
+      k: Math.max(0.2, Math.min(5, prev.k * scaleFactor))
+    }));
   };
 
-  const handleMouseMove = (e: React.MouseEvent<SVGSVGElement>) => {
-    if (dragging === null || !svgRef.current) return;
-    const svg = svgRef.current;
-    const rect = svg.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setNodePositions((prev) =>
-      prev.map((pos, i) => (i === dragging ? { x: Math.max(5, Math.min(95, x)), y: Math.max(5, Math.min(95, y)) } : pos))
-    );
-  };
-
-  const handleMouseUp = () => setDragging(null);
-
-  const nodeColor = (n: typeof nodes[0], i: number) => {
-    if (i === 0) return isActive ? "#3C3B6E" : "#94a3b8";
-    if (i === activeLeafIdx && isActive) return n.color;
-    if (hoveredNode === i) return n.color;
-    if (!isActive) return "#e2e8f0";
-    return n.type === "red" ? "#fca5a5" : "#a5b4fc";
-  };
-
-  const edgeColor = (fromIdx: number, toIdx: number) => {
-    if (!isActive) return "#e2e8f0";
-    if (fromIdx === 0 || toIdx === 0) {
-      if (activeLeafIdx === fromIdx || activeLeafIdx === toIdx) return "#fbbf24";
-      if (hoveredNode === fromIdx || hoveredNode === toIdx) return "#fcd34d";
-      return "#c7d2fe";
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (hoveredId) {
+      setDraggingNode(hoveredId);
+    } else {
+      setIsPanning(true);
+      lastMousePos.current = { x: e.clientX, y: e.clientY };
     }
-    if (hoveredNode === fromIdx || hoveredNode === toIdx) return "#a5b4fc";
-    return "#e0e7ff";
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (draggingNode) {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      // Inverse transform to find logical coordinates
+      const logicalX = (e.clientX - rect.left - rect.width / 2 - transform.x) / transform.k;
+      const logicalY = (e.clientY - rect.top - rect.height / 2 - transform.y) / transform.k;
+      setNodes(prev => prev.map(n => n.id === draggingNode ? { ...n, x: logicalX, y: logicalY } : n));
+    } else if (isPanning) {
+      const dx = e.clientX - lastMousePos.current.x;
+      const dy = e.clientY - lastMousePos.current.y;
+      setTransform(prev => ({ ...prev, x: prev.x + dx, y: prev.y + dy }));
+      lastMousePos.current = { x: e.clientX, y: e.clientY };
+    }
+  };
+
+  const handleMouseUp = () => {
+    setDraggingNode(null);
+    setIsPanning(false);
   };
 
   return (
-    <div className="flex w-64 flex-shrink-0 flex-col border-l border-slate-100 bg-gradient-to-b from-slate-50 to-white transition-all duration-500">
+    <div className="flex h-full flex-col bg-[#0a0c10] overflow-hidden text-white select-none">
       {/* Header */}
-      <div className="border-b border-slate-100 px-4 py-3">
-        <div className="flex items-center gap-2">
-          <div className={`flex h-6 w-6 items-center justify-center rounded-lg ${
-            isActive ? "bg-blue-900" : "bg-slate-200"
+      <div className="border-b border-white/5 px-5 py-3 flex-shrink-0 flex items-center justify-between bg-[#0f1117]/50 backdrop-blur-sm">
+        <div className="flex items-center gap-2.5">
+          <div className={`flex h-8 w-8 items-center justify-center rounded-lg shadow-inner ${
+            isActive ? "bg-amber-500/20 text-amber-400 ring-1 ring-amber-500/30" : "bg-white/5 text-white/20"
           }`}>
-            <Graph className={`h-3.5 w-3.5 ${isActive ? "text-amber-400" : "text-slate-400"}`} weight="bold" />
+            <Graph className="h-4 w-4" weight="bold" />
           </div>
-          <p className="text-xs font-bold tracking-tight text-slate-800">Knowledge Graph</p>
-          {isActive && (
-            <span className="ml-auto flex h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-          )}
+          <div>
+            <p className="text-sm font-bold tracking-tight">Knowledge Graph</p>
+            <p className={`text-[10px] flex items-center gap-1 font-medium ${isActive ? "text-emerald-400" : "text-white/20"}`}>
+              {isActive && <span className="h-1 w-1 rounded-full bg-emerald-400 animate-ping inline-block" />}
+              {isActive ? "Processing Query…" : "System Idle"}
+            </p>
+          </div>
         </div>
-        <p className={`mt-1 text-[10px] font-medium ${
-          isActive ? "text-blue-700" : "text-slate-400"
-        }`}>
-          {isActive ? "Traversing nodes…" : "Idle — ready"}
-        </p>
+        <div className="flex gap-4 text-[10px] font-mono text-white/30">
+          <span>{meta.totalNodes} NODES</span>
+          <span>{meta.totalEdges} EDGES</span>
+        </div>
       </div>
 
-      {/* Interactive Draggable Graph */}
-      <div className="relative flex-1 overflow-hidden px-1 py-2 select-none" style={{ minHeight: 220 }}>
-        <svg
-          ref={svgRef}
-          viewBox="0 0 100 100"
-          className="h-full w-full cursor-grab active:cursor-grabbing"
-          onMouseMove={handleMouseMove}
-          onMouseUp={handleMouseUp}
-          onMouseLeave={handleMouseUp}
-        >
-          <defs>
-            <radialGradient id="hubGrad" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={isActive ? "#4f46e5" : "#94a3b8"} />
-              <stop offset="100%" stopColor={isActive ? "#3C3B6E" : "#cbd5e1"} />
-            </radialGradient>
-            {/* Glowing filters */}
-            <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur stdDeviation="2" result="coloredBlur" />
-              <feMerge>
-                <feMergeNode in="coloredBlur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="strongGlow" x="-100%" y="-100%" width="300%" height="300%">
-              <feGaussianBlur stdDeviation="3" result="coloredBlur" />
-              <feMerge>
-                <feMergeNode in="coloredBlur" />
-                <feMergeNode in="coloredBlur" />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-          </defs>
-
-          {/* Hub spokes */}
-          {nodes.slice(1).map((node, i) => (
-            <line
-              key={`spoke-${i}`}
-              x1={nodePositions[0].x}
-              y1={nodePositions[0].y}
-              x2={nodePositions[i + 1].x}
-              y2={nodePositions[i + 1].y}
-              stroke={edgeColor(0, i + 1)}
-              strokeWidth={activeLeafIdx === i + 1 && isActive ? "1.5" : "0.6"}
-              strokeDasharray={isActive ? "3 2" : "0"}
-              opacity={activeLeafIdx === i + 1 && isActive ? 1 : isActive ? 0.7 : 0.4}
-              style={{ transition: "all 0.3s ease-out" }}
-              filter={activeLeafIdx === i + 1 && isActive ? "url(#glow)" : "none"}
-            />
-          ))}
-
-          {/* Cross edges */}
-          {crossEdges.map(([a, b], i) => (
-            <line
-              key={`cross-${i}`}
-              x1={nodePositions[a].x}
-              y1={nodePositions[a].y}
-              x2={nodePositions[b].x}
-              y2={nodePositions[b].y}
-              stroke={edgeColor(a, b)}
-              strokeWidth="0.5"
-              opacity={hoveredNode === a || hoveredNode === b ? 0.8 : isActive ? 0.5 : 0.25}
-              style={{ transition: "all 0.4s ease-out" }}
-            />
-          ))}
-
-          {/* Nodes */}
-          {nodes.map((node, i) => {
-            const pos = nodePositions[i];
-            const isActiveNode = i === activeLeafIdx && isActive;
-            const isHovered = hoveredNode === i;
-            
-            return (
-              <g key={i}>
-                {/* Outer breathing glow for active node */}
-                {isActiveNode && (
-                  <>
-                    <circle
-                      cx={pos.x}
-                      cy={pos.y}
-                      r={node.r + 4}
-                      fill="none"
-                      stroke={node.color}
-                      strokeWidth="1.5"
-                      opacity="0.4"
-                      filter="url(#strongGlow)"
-                      className="animate-[breathing_1.5s_ease-in-out_infinite]"
-                    />
-                    <circle
-                      cx={pos.x}
-                      cy={pos.y}
-                      r={node.r + 2}
-                      fill="none"
-                      stroke={node.color}
-                      strokeWidth="1"
-                      opacity="0.6"
-                      className="animate-[breathing_1.5s_ease-in-out_infinite_0.3s]"
-                    />
-                  </>
-                )}
-                
-                {/* Hover glow */}
-                {isHovered && !isActiveNode && (
-                  <circle
-                    cx={pos.x}
-                    cy={pos.y}
-                    r={node.r + 2.5}
-                    fill="none"
-                    stroke={node.color}
-                    strokeWidth="1"
-                    opacity="0.5"
-                    filter="url(#glow)"
-                  />
-                )}
-
-                {/* Main node circle */}
-                <circle
-                  cx={pos.x}
-                  cy={pos.y}
-                  r={node.r}
-                  fill={i === 0 ? "url(#hubGrad)" : nodeColor(node, i)}
-                  stroke={isActiveNode ? node.color : i === 0 ? (isActive ? "#f59e0b" : "#94a3b8") : "white"}
-                  strokeWidth={isActiveNode ? "1.5" : i === 0 ? "1.2" : "0.8"}
-                  style={{ 
-                    transition: "all 0.3s ease-out",
-                    cursor: dragging === i ? "grabbing" : "grab"
-                  }}
-                  filter={isActiveNode ? "url(#strongGlow)" : isHovered ? "url(#glow)" : "none"}
-                  onMouseDown={(e) => handleMouseDown(e, i)}
-                  onMouseEnter={() => setHoveredNode(i)}
-                  onMouseLeave={() => setHoveredNode(null)}
-                  className={isActiveNode ? "animate-pulse" : ""}
-                />
-
-                {/* Node label */}
-                <text
-                  x={pos.x}
-                  y={pos.y + node.r + 4.5}
-                  textAnchor="middle"
-                  fontSize={i === 0 ? "4.2" : "3"}
-                  fontWeight={i === 0 ? "bold" : isActiveNode ? "600" : "normal"}
-                  fill={isActiveNode ? node.color : isActive ? (i === 0 ? "#1e1b4b" : "#475569") : "#94a3b8"}
-                  style={{ 
-                    transition: "all 0.3s ease-out",
-                    pointerEvents: "none",
-                    userSelect: "none"
-                  }}
-                  className={isActiveNode ? "animate-pulse" : ""}
-                >
-                  {node.label}
-                </text>
-              </g>
-            );
-          })}
-        </svg>
-      </div>
-
-      {/* Active query */}
-      {query && (
-        <div className="mx-3 mb-3 rounded-2xl border border-blue-100 bg-blue-50 px-3 py-2">
-          <p className="text-[10px] font-bold uppercase tracking-widest text-blue-500 mb-0.5">Query</p>
-          <p className="text-xs text-blue-900 line-clamp-2 leading-relaxed">{query}</p>
-        </div>
-      )}
-
-      {/* Sections */}
-      <div className="border-t border-slate-100 px-4 py-3">
-        <p className="text-[10px] font-bold uppercase tracking-widest text-slate-400 mb-2">Sections Loaded</p>
-        <div className="flex flex-col gap-1.5">
-          {[
-            { label: "Voter Check-In", color: "bg-red-400" },
-            { label: "Voter ID", color: "bg-blue-700" },
-            { label: "Provisional Ballots", color: "bg-red-400" },
-          ].map((s) => (
-            <div key={s.label} className={`flex items-center gap-2 text-[10px] transition-all duration-300 ${
-              isActive ? "text-slate-700" : "text-slate-400"
-            }`}>
-              <div className={`h-1.5 w-1.5 rounded-full flex-shrink-0 ${s.color} ${
-                isActive ? "opacity-100 animate-pulse" : "opacity-30"
-              }`} />
-              {s.label}
+      {/* Main Viewport */}
+      <div className="flex-1 min-h-0 relative overflow-hidden cursor-move"
+           onWheel={handleWheel}
+           onMouseDown={handleMouseDown}
+           onMouseMove={handleMouseMove}
+           onMouseUp={handleMouseUp}
+           onMouseLeave={handleMouseUp}>
+        
+        {nodes.length === 0 ? (
+          <div className="absolute inset-0 flex items-center justify-center flex-col gap-4">
+            <div className="p-6 rounded-full bg-white/5 animate-pulse">
+              <Graph className="h-10 w-10 text-white/10" weight="duotone" />
             </div>
-          ))}
+            <p className="text-xs text-white/20 font-medium uppercase tracking-widest">Awaiting Sidecar Signal</p>
+          </div>
+        ) : (
+          <svg ref={svgRef} className="h-full w-full">
+            <defs>
+              <filter id="node-glow" x="-100%" y="-100%" width="300%" height="300%">
+                <feGaussianBlur stdDeviation="3" result="blur" />
+                <feComposite in="SourceGraphic" in2="blur" operator="over" />
+              </filter>
+            </defs>
+
+            <g transform={`translate(${svgRef.current?.clientWidth ? svgRef.current.clientWidth / 2 + transform.x : transform.x}, ${svgRef.current?.clientHeight ? svgRef.current.clientHeight / 2 + transform.y : transform.y}) scale(${transform.k})`}>
+              {/* Edges */}
+              {edges.map((e, i) => {
+                const s = nodes.find(n => n.id === e.source);
+                const t = nodes.find(n => n.id === e.target);
+                if (!s || !t) return null;
+                const isHighlighted = hoveredId === s.id || hoveredId === t.id;
+                return (
+                  <line key={i} x1={s.x} y1={s.y} x2={t.x} y2={t.y}
+                    stroke={isHighlighted ? "rgba(99,102,241,0.4)" : "rgba(255,255,255,0.06)"}
+                    strokeWidth={isHighlighted ? 1.5 : 0.8}
+                    style={{ transition: "stroke 0.2s" }} />
+                );
+              })}
+
+              {/* Nodes */}
+              {nodes.map(n => {
+                const isHovered = hoveredId === n.id;
+                const color = NODE_COLORS[n.type];
+                return (
+                  <g key={n.id} transform={`translate(${n.x}, ${n.y})`}
+                     onMouseEnter={() => setHoveredId(n.id)}
+                     onMouseLeave={() => setHoveredId(null)}
+                     style={{ cursor: "pointer" }}>
+                    <circle r={n.size + (isHovered ? 2 : 0)} fill={color}
+                      className="transition-all duration-200"
+                      filter={isHovered ? "url(#node-glow)" : "none"}
+                      opacity={hoveredId && !isHovered ? 0.3 : 1} />
+                    {(n.type !== "concept" || isHovered) && (
+                      <text dy={n.size + 12} textAnchor="middle"
+                        className={`text-[10px] font-medium transition-opacity duration-200 ${isHovered ? "fill-white" : "fill-white/40"}`}
+                        style={{ fontSize: n.type === "document" ? "12px" : "10px", pointerEvents: "none", opacity: hoveredId && !isHovered ? 0.1 : 1 }}>
+                        {n.label}
+                      </text>
+                    )}
+                  </g>
+                );
+              })}
+            </g>
+          </svg>
+        )}
+
+        {/* Zoom Controls Overlay */}
+        <div className="absolute bottom-4 right-4 flex flex-col gap-1">
+          <button onClick={() => setTransform(prev => ({ ...prev, k: Math.min(5, prev.k * 1.2) }))}
+            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/40 hover:text-white transition-colors">
+            <MagnifyingGlassPlus size={16} />
+          </button>
+          <button onClick={() => setTransform(prev => ({ ...prev, k: Math.max(0.2, prev.k / 1.2) }))}
+            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/40 hover:text-white transition-colors">
+            <MagnifyingGlassMinus size={16} />
+          </button>
+          <button onClick={() => setTransform({ x: 0, y: 0, k: 1 })}
+            className="p-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-white/40 hover:text-white transition-colors">
+            <ArrowRight size={16} className="rotate-45" />
+          </button>
+        </div>
+      </div>
+
+      {/* Legend */}
+      <div className="border-t border-white/5 px-5 py-3 flex items-center gap-6 bg-[#0f1117]/30">
+        {Object.entries(NODE_COLORS).map(([type, color]) => (
+          <div key={type} className="flex items-center gap-2">
+            <div className="h-2 w-2 rounded-full" style={{ backgroundColor: color }} />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-white/30">{type}</span>
+          </div>
+        ))}
+        <div className="ml-auto flex items-center gap-2 text-[10px] font-bold text-emerald-500/50">
+          <span className="h-1 w-1 rounded-full bg-emerald-500" />
+          CONNECTED
         </div>
       </div>
     </div>
   );
 }
 
-function SourceCard({ source }: { source: string }) {
-  const sectionName = source.replace(/^Poll Worker Training Manual 2026,\s*/, "").trim();
-  const anchor = SECTION_LINKS[sectionName] ?? "#";
+function SourceCard({
+  source,
+  sourceMeta,
+  onOpenSource,
+}: {
+  source: string;
+  sourceMeta?: SourceMeta[];
+  onOpenSource?: (meta: SourceMeta[], index: number) => void;
+}) {
+  const primaryMeta = sourceMeta?.[0];
+  const sectionName = primaryMeta?.sectionTitle ?? source.replace(/^[^,]+,\s*/, "").trim();
+  const docName = primaryMeta?.documentName ?? source.split(",")[0]?.trim() ?? "Training Document";
+  const pageNum = primaryMeta?.pageNumber;
+
+  const handleClick = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (sourceMeta && sourceMeta.length > 0 && onOpenSource) {
+      onOpenSource(sourceMeta, 0);
+    }
+  };
 
   return (
-    <a
-      href={anchor}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="mt-4 inline-flex items-center gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm transition-all hover:border-amber-400 hover:bg-amber-100 group"
+    <button
+      onClick={handleClick}
+      className="mt-6 w-full text-left inline-flex items-center gap-4 rounded-2xl border-2 border-amber-200/60 bg-gradient-to-br from-amber-50/80 via-orange-50/50 to-amber-50/80 px-5 py-4 transition-all hover:border-amber-400 hover:shadow-xl hover:shadow-amber-100 hover:-translate-y-1 hover:scale-[1.02] group cursor-pointer backdrop-blur-sm"
     >
-      <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg bg-amber-200 text-amber-700">
-        <BookOpen className="h-4 w-4" weight="duotone" />
+      <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md group-hover:shadow-lg group-hover:scale-110 transition-all">
+        <BookOpen className="h-6 w-6" weight="duotone" />
       </div>
       <div className="flex-1 min-w-0">
-        <p className="text-[10px] font-semibold uppercase tracking-wider text-amber-600">Source Document</p>
-        <p className="text-xs font-medium text-amber-900 truncate">Poll Worker Training Manual 2026</p>
-        {sectionName && <p className="text-[10px] text-amber-700 truncate">§ {sectionName}</p>}
+        <p className="text-[11px] font-bold uppercase tracking-wider text-amber-600 mb-1">📄 View in PDF</p>
+        <p className="text-sm font-bold text-amber-900 truncate mb-1">{docName}</p>
+        <div className="flex items-center gap-2 flex-wrap">
+          {sectionName && (
+            <p className="text-[11px] text-amber-700 truncate max-w-[300px] bg-amber-100/50 px-2 py-0.5 rounded-md">
+              § {sectionName.length > 60 ? sectionName.substring(0, 60) + '...' : sectionName}
+            </p>
+          )}
+          {pageNum && (
+            <span className="text-[11px] font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 rounded-full px-3 py-1 shadow-sm">
+              Page {pageNum}
+            </span>
+          )}
+        </div>
       </div>
-      <CaretRight className="h-4 w-4 text-amber-400 transition-transform group-hover:translate-x-0.5" weight="bold" />
-    </a>
+      <div className="flex flex-col items-center gap-1 px-2">
+        <CaretRight className="h-5 w-5 text-amber-500 transition-transform group-hover:translate-x-2 group-hover:scale-125" weight="bold" />
+        <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wide">Open</span>
+      </div>
+    </button>
   );
 }
 
@@ -461,27 +511,36 @@ function AIMessage({
   isStreaming,
   toolSteps,
   fontSize,
+  language,
+  onOpenSource,
+  onSuggest,
+  isLastAssistant,
 }: {
   message: Message;
   isStreaming: boolean;
   toolSteps: ToolStep[];
   fontSize: number;
+  language: Language;
+  onOpenSource: (meta: SourceMeta[], index: number) => void;
+  onSuggest: (q: string) => void;
+  isLastAssistant: boolean;
 }) {
   const sourceIdx = message.content.indexOf("📄 Source:");
   const mainText = sourceIdx > -1 ? message.content.slice(0, sourceIdx).trimEnd() : message.content;
   const inlineSource = sourceIdx > -1 ? message.content.slice(sourceIdx + 10).trim() : message.source;
   const showTools = isStreaming && toolSteps.some((s) => s.status !== "pending");
+  const suggestions = language === "es" ? FOLLOW_UP_SUGGESTIONS_ES : FOLLOW_UP_SUGGESTIONS_EN;
 
   return (
     <div className="mb-8">
       {/* Sam header row */}
-      <div className="mb-3 flex items-center gap-2.5">
-        <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-full shadow ring-2 ring-amber-200">
+      <div className="mb-2 flex items-center gap-2.5">
+        <div className="relative h-7 w-7 flex-shrink-0 overflow-hidden rounded-full ring-2 ring-amber-200">
           <Image
-            src={isStreaming ? "/sam.gif" : "/logo.png"}
+            src="/logo.jpeg"
             alt="Sam"
             fill
-            className="object-contain"
+            className="object-cover"
             unoptimized
           />
         </div>
@@ -495,25 +554,63 @@ function AIMessage({
       </div>
 
       {/* Tool-call steps */}
-      {showTools && <ToolCallPanel steps={toolSteps} language="en" />}
+      {showTools && <ToolCallPanel steps={toolSteps} language={language} />}
 
-      {/* Free-flow response text */}
+      {/* Free-flow response — with markdown rendering */}
       {mainText && (
-        <div className="pl-0">
-          <p
-            className={`leading-relaxed text-slate-800 whitespace-pre-wrap ${
+        <div>
+          <div
+            className={`leading-relaxed text-slate-800 ${
               isStreaming ? "animate-[breathing_2s_ease-in-out_infinite]" : ""
             }`}
             style={{ fontSize: `${fontSize}px` }}
           >
-            {mainText}
+            <ReactMarkdown 
+              remarkPlugins={[remarkGfm]}
+              components={{
+                p: ({children}) => <p className="mb-3 last:mb-0">{children}</p>,
+                strong: ({children}) => <strong className="font-semibold text-slate-900">{children}</strong>,
+                em: ({children}) => <em className="italic">{children}</em>,
+                ul: ({children}) => <ul className="list-disc pl-5 mb-3 space-y-1">{children}</ul>,
+                ol: ({children}) => <ol className="list-decimal pl-5 mb-3 space-y-1">{children}</ol>,
+                li: ({children}) => <li className="text-slate-700">{children}</li>,
+                h1: ({children}) => <h1 className="text-lg font-bold mb-2 text-slate-900">{children}</h1>,
+                h2: ({children}) => <h2 className="text-base font-bold mb-2 text-slate-900">{children}</h2>,
+                h3: ({children}) => <h3 className="text-sm font-bold mb-2 text-slate-900">{children}</h3>,
+                code: ({children}) => <code className="bg-slate-100 px-1.5 py-0.5 rounded text-xs font-mono text-slate-800">{children}</code>,
+                blockquote: ({children}) => <blockquote className="border-l-4 border-amber-300 pl-3 italic text-slate-600 my-2">{children}</blockquote>,
+              }}
+            >
+              {mainText}
+            </ReactMarkdown>
             {isStreaming && (
               <span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-amber-500 align-middle" />
             )}
-          </p>
+          </div>
 
           {/* Source card — show once done */}
-          {!isStreaming && inlineSource && <SourceCard source={inlineSource} />}
+          {!isStreaming && inlineSource && (
+            <SourceCard
+              source={inlineSource}
+              sourceMeta={message.sourceMeta}
+              onOpenSource={onOpenSource}
+            />
+          )}
+
+          {/* Inline follow-up suggestion chips — subtle, no bubble */}
+          {!isStreaming && isLastAssistant && (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {suggestions.slice(0, 3).map((q) => (
+                <button
+                  key={q}
+                  onClick={() => onSuggest(q)}
+                  className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-[12px] text-slate-500 transition hover:border-amber-300 hover:bg-amber-50 hover:text-amber-800"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -530,12 +627,57 @@ export default function ChatWindow() {
   const [streamingId, setStreamingId] = useState<string | null>(null);
   const [toolSteps, setToolSteps] = useState<ToolStep[]>([]);
   const [fontSize, setFontSize] = useState(15);
+  const [sourceViewerExpanded, setSourceViewerExpanded] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [currentQuery, setCurrentQuery] = useState("");
+  // Source viewer state
+  const [activeSourceMeta, setActiveSourceMeta] = useState<SourceMeta[] | null>(null);
+  const [activeSourceIndex, setActiveSourceIndex] = useState(0);
+  const [backendModel, setBackendModel] = useState<"ollama" | "groq" | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
+
+  const [suggestions, setSuggestions] = useState<{ q: string; qEs: string; icon: React.ElementType; category: string; categoryEs: string }[]>([]);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(true);
+
+  // Fetch dynamic suggestions from API
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      try {
+        const res = await fetch("/api/suggestions");
+        if (!res.ok) throw new Error("Failed to fetch suggestions");
+        const data = await res.json();
+        const mapped = data.suggestions.map((s: { q: string; qEs?: string; category: string; categoryEs?: string; icon: string }) => ({
+          q: s.q,
+          qEs: s.qEs || s.q,
+          category: s.category,
+          categoryEs: s.categoryEs || s.category,
+          icon: iconMap[s.icon] || Clock,
+        }));
+        setSuggestions(mapped);
+      } catch (err) {
+        console.warn("Failed to load dynamic suggestions, using defaults:", err);
+        setSuggestions(language === "es" ? SUGGESTED_ES_DEFAULT : SUGGESTED_EN_DEFAULT);
+      } finally {
+        setSuggestionsLoading(false);
+      }
+    };
+    fetchSuggestions();
+  }, [language]);
+
+  const handleOpenSource = useCallback((meta: SourceMeta[], index: number) => {
+    setActiveSourceMeta(meta);
+    setActiveSourceIndex(index);
+    setSourceViewerExpanded(true);
+  }, []);
+
+  const handleCloseSource = useCallback(() => {
+    setActiveSourceMeta(null);
+    setActiveSourceIndex(0);
+    setSourceViewerExpanded(false);
+  }, []);
 
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -631,6 +773,9 @@ export default function ChatWindow() {
       setInput("");
       setIsLoading(true);
       setStreamingId(assistantId);
+      // Close source viewer so knowledge graph animates during search
+      setActiveSourceMeta(null);
+      setActiveSourceIndex(0);
       if (textareaRef.current) textareaRef.current.style.height = "auto";
 
       // Run tool steps while waiting for first token
@@ -652,6 +797,7 @@ export default function ChatWindow() {
         let accumulated = "";
         let finalSource = "";
         let finalCached = false;
+        let finalSourceMeta: SourceMeta[] | undefined;
         let chunkCount = 0;
 
         console.log("🌊 [Client] Starting to read stream...");
@@ -679,8 +825,16 @@ export default function ChatWindow() {
               if (parsed.done) {
                 finalSource = parsed.source ?? "";
                 finalCached = parsed.cached ?? false;
+                finalSourceMeta = parsed.sourceMeta ?? undefined;
                 if (parsed.content) accumulated = parsed.content;
+                if (parsed.usedSidecar !== undefined) setBackendModel(parsed.usedSidecar ? "ollama" : "groq");
                 console.log("🏁 [Client] Done event received, source:", finalSource);
+                // Show translating indicator if ES mode
+                if (language === "es" && accumulated.trim()) {
+                  setMessages((prev) =>
+                    prev.map((m) => (m.id === assistantId ? { ...m, content: accumulated + "\n\n_Traduciendo…_" } : m))
+                  );
+                }
               }
             } catch (e) {
               console.warn("⚠️ [Client] Failed to parse line:", line, e);
@@ -694,10 +848,32 @@ export default function ChatWindow() {
         // Mark all tool steps done
         setToolSteps((prev) => prev.map((s) => ({ ...s, status: "done" as const })));
 
+        // Translate to Spanish via MyMemory API if language=es and response is in English
+        if (language === "es" && accumulated.trim()) {
+          try {
+            // Extract source line before translating (keep it as-is)
+            const sourceLineMatch = accumulated.match(/\n*📄 Source:[\s\S]*$/);
+            const sourceLine = sourceLineMatch ? sourceLineMatch[0] : "";
+            const bodyText = sourceLine ? accumulated.slice(0, accumulated.length - sourceLine.length) : accumulated;
+
+            const tRes = await fetch("/api/translate", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ text: bodyText, from: "en", to: "es" }),
+            });
+            if (tRes.ok) {
+              const { translated } = await tRes.json();
+              accumulated = translated + sourceLine;
+            }
+          } catch (e) {
+            console.warn("Translation failed, keeping English:", e);
+          }
+        }
+
         setMessages((prev) =>
           prev.map((m) =>
             m.id === assistantId
-              ? { ...m, content: accumulated, source: finalSource, cached: finalCached }
+              ? { ...m, content: accumulated, source: finalSource, cached: finalCached, sourceMeta: finalSourceMeta }
               : m
           )
         );
@@ -737,7 +913,12 @@ export default function ChatWindow() {
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
   };
 
-  const suggested = language === "es" ? SUGGESTED_ES : SUGGESTED_EN;
+  const rawSuggested = suggestions.length > 0 
+    ? suggestions.map(s => ({ ...s, displayQ: language === "es" ? s.qEs : s.q, displayCategory: language === "es" ? s.categoryEs : s.category })) 
+    : (language === "es" 
+        ? SUGGESTED_ES_DEFAULT.map(s => ({ ...s, displayQ: language === "es" ? s.qEs : s.q, displayCategory: language === "es" ? s.categoryEs : s.category })) 
+        : SUGGESTED_EN_DEFAULT.map(s => ({ ...s, displayQ: s.q, displayCategory: s.category })));
+  const suggested = rawSuggested.filter((s, i, arr) => arr.findIndex(x => x.q === s.q) === i);
   const isEmpty = messages.length === 0;
 
   return (
@@ -749,31 +930,41 @@ export default function ChatWindow() {
         <div className="flex items-center justify-between border-b border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-md shadow-sm">
           <div className="flex items-center gap-3">
             <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full shadow-md ring-2 ring-amber-300">
-              <Image src="/logo.png" alt="CivIQ" fill className="object-contain" unoptimized />
+              <Image src="/logo.jpeg" alt="CivIQ" fill className="object-cover" unoptimized />
             </div>
             <div>
-              <p className="text-base font-semibold text-slate-900">Ask Sam</p>
-              <p className="text-xs text-slate-500">Poll Worker AI Assistant · {language === "en" ? "English" : "Español"}</p>
+              <p className="text-base font-bold text-slate-900">
+                Ask Sam
+              </p>
+              <p className="text-xs text-slate-500 flex items-center gap-1.5">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse"></span>
+                Poll Worker AI Assistant · {language === "en" ? "English" : "Español"}{backendModel && (
+                  <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${backendModel === "ollama" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+                    {backendModel === "ollama" ? "🔒 Local" : "☁ Groq"}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
-
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             {/* Font size */}
-            <button
-              onClick={() => setFontSize((s) => Math.max(12, s - 1))}
-              className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-slate-800 transition"
-              title="Decrease font size"
-            >
-              <MagnifyingGlassMinus className="h-4 w-4" weight="bold" />
-            </button>
-            <span className="text-xs text-slate-400 w-7 text-center">{fontSize}px</span>
-            <button
-              onClick={() => setFontSize((s) => Math.min(22, s + 1))}
-              className="rounded-xl border border-slate-200 bg-white p-1.5 text-slate-500 hover:text-slate-800 transition"
-              title="Increase font size"
-            >
-              <MagnifyingGlassPlus className="h-4 w-4" weight="bold" />
-            </button>
+            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 shadow-sm">
+              <button
+                onClick={() => setFontSize((s) => Math.max(12, s - 1))}
+                className="text-slate-500 transition hover:text-slate-800 hover:scale-110"
+                title="Decrease font size"
+              >
+                <MagnifyingGlassMinus className="h-4 w-4" weight="bold" />
+              </button>
+              <span className="text-xs font-semibold text-slate-700 min-w-[32px] text-center">{fontSize}px</span>
+              <button
+                onClick={() => setFontSize((s) => Math.min(20, s + 1))}
+                className="text-slate-500 transition hover:text-slate-800 hover:scale-110"
+                title="Increase font size"
+              >
+                <MagnifyingGlassPlus className="h-4 w-4" weight="bold" />
+              </button>
+            </div>
 
             {/* TTS */}
             <button
@@ -781,10 +972,10 @@ export default function ChatWindow() {
                 const last = [...messages].reverse().find((m) => m.role === "assistant");
                 if (last) speak(last.content);
               }}
-              className={`rounded-xl border p-1.5 transition ${
+              className={`rounded-xl border p-2 transition-all shadow-sm ${
                 isSpeaking
-                  ? "border-amber-300 bg-amber-50 text-amber-600"
-                  : "border-slate-200 bg-white text-slate-500 hover:text-slate-800"
+                  ? "border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50 text-amber-600 shadow-md scale-105"
+                  : "border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:shadow-md hover:scale-105"
               }`}
               title={isSpeaking ? "Stop speaking" : "Read aloud"}
             >
@@ -794,10 +985,10 @@ export default function ChatWindow() {
             {/* Language */}
             <button
               onClick={() => setLanguage((l) => (l === "en" ? "es" : "en"))}
-              className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 transition hover:border-amber-300 hover:text-amber-700"
+              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-all shadow-sm hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 hover:shadow-md hover:scale-105"
             >
-              <Globe className="h-3.5 w-3.5" />
-              {language === "en" ? "" : ""}
+              <Globe className="h-4 w-4" weight="bold" />
+              {language === "en" ? "EN" : "ES"}
             </button>
           </div>
         </div>
@@ -808,7 +999,7 @@ export default function ChatWindow() {
             <div className="flex h-full flex-col items-center justify-center">
               {/* Hero avatar */}
               <div className="relative mb-6 h-28 w-28 overflow-hidden rounded-full shadow-xl ring-4 ring-amber-100">
-                <Image src="/sam.gif" alt="Sam" fill className="object-contain" unoptimized />
+                <Image src="/sam.gif" alt="Sam" fill className="object-cover" unoptimized />
               </div>
               <h2 className="font-[family-name:var(--font-playfair)] text-3xl font-medium text-slate-900">
                 {language === "en" ? "Hi, I'm Sam." : "Hola, soy Sam."}
@@ -821,16 +1012,16 @@ export default function ChatWindow() {
 
               {/* Quick question cards */}
               <div className="mt-10 grid w-full max-w-2xl grid-cols-2 gap-3 sm:grid-cols-3">
-                {suggested.map(({ q, icon: Icon, category }) => (
+                {suggested.map(({ q, displayQ, displayCategory, icon: Icon }, idx) => (
                   <button
-                    key={q}
+                    key={`${idx}-${displayQ}`}
                     onClick={() => sendMessage(q)}
                     className="group flex flex-col items-start gap-2 rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-1 hover:border-blue-800 hover:shadow-lg"
                   >
                     <Icon className="h-5 w-5 text-slate-500 group-hover:text-[#B22234] transition-colors" weight="duotone" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#3C3B6E] group-hover:text-[#B22234] transition-colors">{category}</span>
+                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#3C3B6E] group-hover:text-[#B22234] transition-colors">{displayCategory}</span>
                     <span className="text-xs leading-snug text-slate-700 group-hover:text-slate-900" style={{ fontSize: `${fontSize - 3}px` }}>
-                      {q}
+                      {displayQ}
                     </span>
                   </button>
                 ))}
@@ -841,16 +1032,18 @@ export default function ChatWindow() {
               {messages.map((msg) => {
                 if (msg.role === "user") {
                   return (
-                    <div key={msg.id} className="mb-8 flex justify-end">
+                    <div key={msg.id} className="mb-8 flex justify-end animate-in slide-in-from-right duration-300">
                       <div
-                        className="max-w-[70%] rounded-3xl rounded-tr-md bg-[#3C3B6E] px-5 py-3.5 text-white shadow-md"
-                        style={{ fontSize: `${fontSize}px`, lineHeight: "1.6" }}
+                        className="max-w-[75%] rounded-3xl rounded-tr-md bg-gradient-to-br from-[#3C3B6E] to-[#2a2952] px-6 py-4 text-white shadow-lg hover:shadow-xl transition-shadow"
+                        style={{ fontSize: `${fontSize}px`, lineHeight: "1.7" }}
                       >
                         {msg.content}
                       </div>
                     </div>
                   );
                 }
+                const assistantMessages = messages.filter((m) => m.role === "assistant");
+                const isLastAssistant = msg === assistantMessages[assistantMessages.length - 1];
                 return (
                   <AIMessage
                     key={msg.id}
@@ -858,6 +1051,10 @@ export default function ChatWindow() {
                     isStreaming={msg.id === streamingId}
                     toolSteps={msg.id === streamingId ? toolSteps : []}
                     fontSize={fontSize}
+                    language={language}
+                    onOpenSource={handleOpenSource}
+                    onSuggest={(q) => sendMessage(q)}
+                    isLastAssistant={isLastAssistant}
                   />
                 );
               })}
@@ -867,9 +1064,9 @@ export default function ChatWindow() {
         </div>
 
         {/* Input bar */}
-        <div className="border-t border-slate-200 bg-white px-6 py-4 sm:px-10">
+        <div className="border-t border-slate-200 bg-gradient-to-b from-white to-slate-50/50 px-6 py-5 sm:px-10 backdrop-blur-sm">
           <div className="mx-auto max-w-2xl">
-            <div className="flex items-end gap-3 rounded-3xl border-2 border-slate-200 bg-white px-5 py-3.5 shadow-md transition-all focus-within:border-blue-800 focus-within:ring-4 focus-within:ring-blue-900/10">
+            <div className="flex items-end gap-3 rounded-3xl border-2 border-slate-300/50 bg-white px-6 py-4 shadow-lg transition-all focus-within:border-amber-400 focus-within:ring-4 focus-within:ring-amber-400/20 focus-within:shadow-xl hover:border-slate-400/70">
               <textarea
                 ref={textareaRef}
                 rows={1}
@@ -888,29 +1085,37 @@ export default function ChatWindow() {
                 disabled={isLoading}
               />
               <div className="flex items-center gap-2">
-                {/* STT */}
-                <button
-                  onClick={toggleListening}
-                  className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl transition ${
-                    isListening
-                      ? "bg-red-100 text-red-500 animate-pulse"
-                      : "text-slate-400 hover:text-slate-700"
-                  }`}
-                  title={isListening ? "Stop listening" : "Speak your question"}
-                >
-                  {isListening ? <MicrophoneSlash className="h-4 w-4" weight="fill" /> : <Microphone className="h-4 w-4" weight="fill" />}
-                </button>
-
-                <button
-                  onClick={() => sendMessage(input)}
-                  disabled={!input.trim() || isLoading}
-                  className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-2xl bg-[#3C3B6E] text-white shadow-sm transition hover:bg-[#2d2c58] disabled:cursor-not-allowed disabled:opacity-30"
-                >
-                  <PaperPlaneRight className="h-4 w-4" weight="fill" />
-                </button>
+                <div className="flex gap-2.5">
+                  <button
+                    onClick={() => {
+                      if (isListening) {
+                        setIsListening(false);
+                        recognitionRef.current?.stop();
+                      } else {
+                        setIsListening(true);
+                      }
+                    }}
+                    className={`rounded-xl p-2.5 transition-all shadow-sm ${
+                      isListening
+                        ? "bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-md hover:scale-105 animate-pulse"
+                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:shadow-md hover:scale-105"
+                    }`}
+                    title={isListening ? "Stop listening" : "Speak your question"}
+                  >
+                    {isListening ? <MicrophoneSlash className="h-5 w-5" weight="fill" /> : <Microphone className="h-5 w-5" weight="fill" />}
+                  </button>
+                  <button
+                    onClick={() => sendMessage(input)}
+                    disabled={!input.trim() || isLoading}
+                    className="rounded-xl bg-gradient-to-br from-[#3C3B6E] to-[#2a2952] p-2.5 text-white transition-all hover:shadow-lg hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 shadow-md"
+                    title="Send message"
+                  >
+                    <PaperPlaneRight className="h-5 w-5" weight="fill" />
+                  </button>
+                </div>
               </div>
             </div>
-            <p className="mt-2 text-center text-[11px] text-slate-400">
+            <p className="mt-3 text-center text-[11px] text-slate-400">
               {language === "en"
                 ? "Sam answers only from official poll worker training documents. · Enter to send, Shift+Enter for new line."
                 : "Sam responde solo desde documentos oficiales. · Enter para enviar."}
@@ -919,8 +1124,33 @@ export default function ChatWindow() {
         </div>
       </div>
 
-      {/* ── Knowledge Panel ── */}
-      <KnowledgePanel isActive={isLoading} query={currentQuery} />
+      {/* ── Right Panel: Knowledge Graph + Expandable Source Viewer ── */}
+      <div className={`relative transition-all duration-500 ease-in-out ${
+        sourceViewerExpanded ? 'w-[55%]' : 'w-[380px]'
+      } border-l border-slate-200 bg-white shadow-2xl flex flex-col`}>
+        {activeSourceMeta ? (
+          <>
+            {/* Collapse/Expand Toggle */}
+            <button
+              onClick={() => setSourceViewerExpanded(!sourceViewerExpanded)}
+              className="absolute -left-10 top-1/2 -translate-y-1/2 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg transition-all hover:scale-110 hover:shadow-xl"
+              title={sourceViewerExpanded ? "Collapse viewer" : "Expand viewer"}
+            >
+              <CaretRight className={`h-5 w-5 transition-transform duration-300 ${
+                sourceViewerExpanded ? 'rotate-180' : ''
+              }`} weight="bold" />
+            </button>
+            <SourceViewer
+              sourceMeta={activeSourceMeta}
+              activeIndex={activeSourceIndex}
+              onClose={handleCloseSource}
+              onSelectSource={setActiveSourceIndex}
+            />
+          </>
+        ) : (
+          <KnowledgePanel isActive={isLoading} query={currentQuery} />
+        )}
+      </div>
     </div>
   );
 }
