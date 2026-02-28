@@ -1,104 +1,185 @@
 "use client";
-import { Filter } from "lucide-react";
-
-const SAMPLE_ENTRIES = [
-  { id: "a1", time: "2:47 PM", user: "Poll Worker", question: "What time must polls close?",                             source: "Section 6", lang: "EN", cached: true,  flagged: false },
-  { id: "a2", time: "2:34 PM", user: "Poll Worker", question: "¿Cuáles son las formas de identificación aceptables?",   source: "Section 3", lang: "ES", cached: false, flagged: false },
-  { id: "a3", time: "2:21 PM", user: "Official",    question: "How do I handle a power outage?",                        source: "Section 7", lang: "EN", cached: true,  flagged: false },
-  { id: "a4", time: "2:10 PM", user: "Poll Worker", question: "What do I do if a voter's name isn't in the poll book?", source: "Section 2", lang: "EN", cached: true,  flagged: false },
-  { id: "a5", time: "1:58 PM", user: "Poll Worker", question: "Can voters wear campaign buttons inside the polls?",     source: "Section 8", lang: "EN", cached: false, flagged: false },
-];
+import { useState } from "react";
+import { Filter, AlertCircle, CheckCircle, Download, Loader2, Inbox } from "lucide-react";
+import { useAuditLog } from "@/lib/hooks";
+import { exportToCSV } from "@/lib/csv-export";
+import { Language, UserType } from "@/types";
 
 export default function AuditLog() {
+  const [userFilter, setUserFilter] = useState<UserType | "">("");
+  const [langFilter, setLangFilter] = useState<Language | "">("");
+  const [statusFilter, setStatusFilter] = useState<"flagged" | "">("");
+
+  const filters = {
+    userType: userFilter || undefined,
+    language: langFilter || undefined,
+    flagged: statusFilter === "flagged" ? true : undefined,
+  };
+
+  const { entries, stats, loading } = useAuditLog(filters);
+
+  function handleExport() {
+    const data = entries.map((e) => ({
+      Time: new Date(e.timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" }),
+      User: e.userType === "poll_worker" ? "Poll Worker" : "Official",
+      Question: e.question,
+      Source: e.sourceDoc,
+      Language: e.language.toUpperCase(),
+      Cached: e.cached ? "Yes" : "No",
+      Flagged: e.flagged ? "Yes" : "No",
+    }));
+    exportToCSV(data, `civiq-audit-log-${new Date().toISOString().slice(0, 10)}`);
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center rounded-2xl border border-slate-100 bg-white py-20 shadow-sm">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+        <span className="ml-2 text-sm text-slate-400">Loading audit log…</span>
+      </div>
+    );
+  }
+
   return (
     <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
       {/* Filter bar */}
-      <div className="flex items-center gap-4 border-b border-slate-100 px-5 py-3">
+      <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 px-5 py-3">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
           <Filter className="h-3.5 w-3.5" />
           Filter
         </div>
-        <select className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:outline-none">
-          <option>All users</option>
-          <option>Poll Worker</option>
-          <option>Official</option>
+        <select
+          value={userFilter}
+          onChange={(e) => setUserFilter(e.target.value as UserType | "")}
+          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:outline-none"
+        >
+          <option value="">All users</option>
+          <option value="poll_worker">Poll Worker</option>
+          <option value="official">Official</option>
         </select>
-        <select className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:outline-none">
-          <option>All languages</option>
-          <option>EN</option>
-          <option>ES</option>
+        <select
+          value={langFilter}
+          onChange={(e) => setLangFilter(e.target.value as Language | "")}
+          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:outline-none"
+        >
+          <option value="">All languages</option>
+          <option value="en">EN</option>
+          <option value="es">ES</option>
         </select>
-        <select className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:outline-none">
-          <option>All statuses</option>
-          <option>Flagged</option>
-          <option>Cached</option>
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value as "flagged" | "")}
+          className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:outline-none"
+        >
+          <option value="">All statuses</option>
+          <option value="flagged">Flagged</option>
         </select>
-        <div className="ml-auto text-xs text-slate-400">
-          Showing <span className="font-semibold text-slate-700">{SAMPLE_ENTRIES.length}</span> entries
+
+        <div className="ml-auto flex items-center gap-4">
+          <div className="text-xs text-slate-400">
+            <span className="font-semibold text-slate-700">{entries.length}</span> entries
+            {stats.totalAll > 0 && (
+              <span className="ml-2">
+                · <span className="text-emerald-600">{stats.cachedCount} cached</span>
+                {stats.flaggedCount > 0 && (
+                  <span className="ml-1 text-red-500">· {stats.flaggedCount} flagged</span>
+                )}
+              </span>
+            )}
+          </div>
+          {entries.length > 0 && (
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
+            >
+              <Download className="h-3 w-3" />
+              Export CSV
+            </button>
+          )}
         </div>
       </div>
 
       {/* Table */}
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-slate-50 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
-              <th className="px-5 py-3">Time</th>
-              <th className="px-5 py-3">User</th>
-              <th className="px-5 py-3">Question</th>
-              <th className="px-5 py-3">Source</th>
-              <th className="px-5 py-3">Lang</th>
-              <th className="px-5 py-3">Cached</th>
-              <th className="px-5 py-3">Flagged</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-50">
-            {SAMPLE_ENTRIES.map((e) => (
-              <tr key={e.id} className="transition hover:bg-slate-50/60">
-                <td className="px-5 py-3.5 text-xs tabular-nums text-slate-400">{e.time}</td>
-                <td className="px-5 py-3.5">
-                  <span
-                    className={`rounded-full px-2.5 py-0.5 text-[10px] font-semibold ${
-                      e.user === "Official"
-                        ? "bg-violet-50 text-violet-700"
-                        : "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {e.user}
-                  </span>
-                </td>
-                <td className="max-w-[280px] px-5 py-3.5">
-                  <p className="truncate text-sm text-slate-700">{e.question}</p>
-                </td>
-                <td className="px-5 py-3.5 text-xs text-blue-600">{e.source}</td>
-                <td className="px-5 py-3.5">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                      e.lang === "ES" ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"
-                    }`}
-                  >
-                    {e.lang}
-                  </span>
-                </td>
-                <td className="px-5 py-3.5 text-xs">
-                  {e.cached ? (
-                    <span className="text-emerald-600">✓ Yes</span>
-                  ) : (
-                    <span className="text-slate-400">—</span>
-                  )}
-                </td>
-                <td className="px-5 py-3.5 text-xs">
-                  {e.flagged ? (
-                    <span className="text-red-500">⚠ Yes</span>
-                  ) : (
-                    <span className="text-slate-300">—</span>
-                  )}
-                </td>
+      {entries.length === 0 ? (
+        <div className="flex flex-col items-center py-16">
+          <Inbox className="h-10 w-10 text-slate-300" />
+          <p className="mt-3 text-sm font-medium text-slate-500">No audit entries yet</p>
+          <p className="mt-1 text-xs text-slate-400">
+            Interactions from Sam Chat and Test AI will appear here.
+          </p>
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-slate-50 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                <th className="px-5 py-3">Time</th>
+                <th className="px-5 py-3">User</th>
+                <th className="px-5 py-3">Question</th>
+                <th className="px-5 py-3">Source</th>
+                <th className="px-5 py-3">Lang</th>
+                <th className="px-5 py-3">Status</th>
               </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {entries.map((e) => {
+                const time = new Date(e.timestamp).toLocaleTimeString("en-US", {
+                  hour: "numeric",
+                  minute: "2-digit",
+                });
+                const userLabel = e.userType === "poll_worker" ? "Poll Worker" : "Official";
+
+                return (
+                  <tr key={e.id} className="transition hover:bg-slate-50/60">
+                    <td className="px-5 py-3 text-xs tabular-nums text-slate-500">{time}</td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          e.userType === "official"
+                            ? "bg-amber-50 text-amber-700"
+                            : "bg-slate-100 text-slate-500"
+                        }`}
+                      >
+                        {userLabel}
+                      </span>
+                    </td>
+                    <td className="max-w-[280px] truncate px-5 py-3 text-sm text-slate-700">
+                      {e.question}
+                    </td>
+                    <td className="px-5 py-3 text-xs text-blue-600">{e.sourceDoc}</td>
+                    <td className="px-5 py-3">
+                      <span
+                        className={`rounded px-1.5 py-0.5 text-[10px] font-medium ${
+                          e.language === "es" ? "bg-blue-50 text-blue-600" : "bg-slate-50 text-slate-500"
+                        }`}
+                      >
+                        {e.language.toUpperCase()}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3">
+                      <div className="flex items-center gap-1.5">
+                        {e.flagged && (
+                          <span className="flex items-center gap-0.5 text-[10px] font-semibold text-red-500">
+                            <AlertCircle className="h-3 w-3" /> Flagged
+                          </span>
+                        )}
+                        {e.cached && (
+                          <span className="flex items-center gap-0.5 text-[10px] font-semibold text-emerald-600">
+                            <CheckCircle className="h-3 w-3" /> Cached
+                          </span>
+                        )}
+                        {!e.flagged && !e.cached && (
+                          <span className="text-[10px] text-slate-300">—</span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

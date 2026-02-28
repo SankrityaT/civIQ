@@ -1,13 +1,16 @@
 "use client";
 import { useState } from "react";
-import { Send, CheckCircle, AlertTriangle, Pencil, Zap } from "lucide-react";
+import { Send, CheckCircle, AlertTriangle, Pencil, Zap, RotateCcw, ShieldCheck } from "lucide-react";
 
 export default function TestChat() {
   const [question, setQuestion] = useState("");
   const [response, setResponse] = useState<string | null>(null);
   const [source, setSource] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [wasCached, setWasCached] = useState(false);
   const [status, setStatus] = useState<"idle" | "approved" | "flagged">("idle");
+  const [editing, setEditing] = useState(false);
+  const [editedResponse, setEditedResponse] = useState("");
 
   async function handleAsk() {
     if (!question.trim()) return;
@@ -15,20 +18,82 @@ export default function TestChat() {
     setResponse(null);
     setSource(null);
     setStatus("idle");
+    setEditing(false);
+    setWasCached(false);
     try {
       const res = await fetch("/api/test", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ question, language: "en" }),
+        body: JSON.stringify({ question, language: "en", action: "ask" }),
       });
       const data = await res.json();
       setResponse(data.response ?? "No response.");
       setSource(data.source ?? null);
+      setWasCached(data.cached ?? false);
     } catch {
       setResponse("Error contacting Sam. Make sure GROQ_API_KEY is set in .env.local.");
     } finally {
       setLoading(false);
     }
+  }
+
+  async function handleApprove() {
+    const finalResponse = editing ? editedResponse : response;
+    if (!finalResponse || !question.trim()) return;
+    try {
+      await fetch("/api/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          language: "en",
+          action: "approve",
+          response: finalResponse,
+          source,
+        }),
+      });
+      if (editing) {
+        setResponse(finalResponse);
+        setEditing(false);
+      }
+      setStatus("approved");
+    } catch {
+      // Silently fail for demo
+    }
+  }
+
+  async function handleFlag() {
+    if (!response || !question.trim()) return;
+    try {
+      await fetch("/api/test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question,
+          language: "en",
+          action: "flag",
+          response,
+          source,
+        }),
+      });
+      setStatus("flagged");
+    } catch {
+      // Silently fail for demo
+    }
+  }
+
+  function handleEdit() {
+    setEditing(true);
+    setEditedResponse(response ?? "");
+  }
+
+  function handleReset() {
+    setQuestion("");
+    setResponse(null);
+    setSource(null);
+    setStatus("idle");
+    setEditing(false);
+    setWasCached(false);
   }
 
   return (
@@ -46,23 +111,33 @@ export default function TestChat() {
           rows={6}
           placeholder="e.g. What do I do if a voter's name isn't in the poll book?"
         />
-        <button
-          onClick={handleAsk}
-          disabled={loading || !question.trim()}
-          className="mt-4 flex items-center justify-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
-        >
-          {loading ? (
-            <>
-              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
-              Asking Sam…
-            </>
-          ) : (
-            <>
-              <Send className="h-3.5 w-3.5" />
-              Ask Sam
-            </>
+        <div className="mt-4 flex gap-2">
+          <button
+            onClick={handleAsk}
+            disabled={loading || !question.trim()}
+            className="flex flex-1 items-center justify-center gap-2 rounded-full bg-slate-900 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-40"
+          >
+            {loading ? (
+              <>
+                <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                Asking Sam…
+              </>
+            ) : (
+              <>
+                <Send className="h-3.5 w-3.5" />
+                Ask Sam
+              </>
+            )}
+          </button>
+          {response && (
+            <button
+              onClick={handleReset}
+              className="flex items-center gap-1.5 rounded-full border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-500 transition hover:bg-slate-50"
+            >
+              <RotateCcw className="h-3.5 w-3.5" />
+            </button>
           )}
-        </button>
+        </div>
       </div>
 
       {/* Response panel */}
@@ -73,9 +148,18 @@ export default function TestChat() {
             <p className="text-xs text-slate-400">Review before approving</p>
           </div>
           {response && (
-            <span className="flex items-center gap-1 rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
-              <Zap className="h-3 w-3" />
-              AI Generated
+            <span
+              className={`flex items-center gap-1 rounded-full px-2.5 py-1 text-[10px] font-semibold ${
+                wasCached
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-amber-50 text-amber-700"
+              }`}
+            >
+              {wasCached ? (
+                <><ShieldCheck className="h-3 w-3" /> Cached</>
+              ) : (
+                <><Zap className="h-3 w-3" /> AI Generated</>
+              )}
             </span>
           )}
         </div>
@@ -91,7 +175,14 @@ export default function TestChat() {
               : "border-slate-200 bg-slate-50 text-slate-700"
           }`}
         >
-          {response ? (
+          {editing ? (
+            <textarea
+              value={editedResponse}
+              onChange={(e) => setEditedResponse(e.target.value)}
+              className="min-h-[120px] w-full resize-none bg-transparent text-sm leading-relaxed text-slate-800 focus:outline-none"
+              autoFocus
+            />
+          ) : response ? (
             <p className="whitespace-pre-wrap">{response}</p>
           ) : (
             <p className="text-slate-400">Response will appear here…</p>
@@ -109,19 +200,26 @@ export default function TestChat() {
         {response && status === "idle" && (
           <div className="mt-4 flex gap-2">
             <button
-              onClick={() => setStatus("approved")}
+              onClick={handleApprove}
               className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-emerald-600 px-4 py-2 text-xs font-semibold text-white transition hover:bg-emerald-700"
             >
-              <CheckCircle className="h-3.5 w-3.5" /> Approve
+              <CheckCircle className="h-3.5 w-3.5" />
+              {editing ? "Save & Approve" : "Approve"}
             </button>
+            {!editing && (
+              <button
+                onClick={handleFlag}
+                className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-red-50 px-4 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+              >
+                <AlertTriangle className="h-3.5 w-3.5" /> Flag
+              </button>
+            )}
             <button
-              onClick={() => setStatus("flagged")}
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-full bg-red-50 px-4 py-2 text-xs font-semibold text-red-600 transition hover:bg-red-100"
+              onClick={editing ? () => setEditing(false) : handleEdit}
+              className="flex items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50"
             >
-              <AlertTriangle className="h-3.5 w-3.5" /> Flag
-            </button>
-            <button className="flex items-center justify-center gap-1.5 rounded-full border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 transition hover:bg-slate-50">
-              <Pencil className="h-3.5 w-3.5" /> Edit
+              <Pencil className="h-3.5 w-3.5" />
+              {editing ? "Cancel" : "Edit"}
             </button>
           </div>
         )}
@@ -135,8 +233,8 @@ export default function TestChat() {
             }`}
           >
             {status === "approved"
-              ? "✓ Approved and cached for poll workers"
-              : "⚠ Flagged for review"}
+              ? "✓ Approved and cached — poll workers will get this exact answer"
+              : "⚠ Flagged for review — response will not be cached"}
           </div>
         )}
       </div>

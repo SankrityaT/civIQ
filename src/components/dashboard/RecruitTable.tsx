@@ -1,16 +1,9 @@
 "use client";
-import { useState } from "react";
-import { SlidersHorizontal, MapPin, Star } from "lucide-react";
-
-const SAMPLE_CANDIDATES = [
-  { id: "VR002", name: "James Wilson",    age: 67, precinct: "PCT-08", languages: ["English"],            score: 90, reason: "prior experience · 22 yrs registered", city: "Tempe" },
-  { id: "VR004", name: "Carlos Martinez", age: 52, precinct: "PCT-17", languages: ["English", "Spanish"], score: 85, reason: "bilingual · prior experience · 15 yrs",  city: "Mesa" },
-  { id: "VR021", name: "Dorothy Harris",  age: 74, precinct: "PCT-14", languages: ["English"],            score: 85, reason: "prior experience · 28 yrs registered",    city: "Mesa" },
-  { id: "VR017", name: "Michelle Taylor", age: 49, precinct: "PCT-15", languages: ["English", "Spanish"], score: 80, reason: "bilingual · prior experience · 16 yrs",  city: "Mesa" },
-  { id: "VR010", name: "Michael Brown",   age: 55, precinct: "PCT-02", languages: ["English"],            score: 80, reason: "prior experience · 20 yrs registered",    city: "Scottsdale" },
-  { id: "VR044", name: "Samuel Parker",   age: 47, precinct: "PCT-04", languages: ["English", "Spanish"], score: 75, reason: "bilingual · prior experience",            city: "Chandler" },
-  { id: "VR001", name: "Maria Garcia",    age: 34, precinct: "PCT-12", languages: ["English", "Spanish"], score: 60, reason: "bilingual · 8 yrs registered",            city: "Phoenix" },
-];
+import { useState, useMemo } from "react";
+import { SlidersHorizontal, MapPin, Star, Globe, Download, Loader2 } from "lucide-react";
+import { useRecruitCandidates } from "@/lib/hooks";
+import { exportToCSV } from "@/lib/csv-export";
+import { Candidate } from "@/types";
 
 function ScorePill({ score }: { score: number }) {
   const cls =
@@ -27,18 +20,84 @@ function ScorePill({ score }: { score: number }) {
 
 export default function RecruitTable() {
   const [cityFilter, setCityFilter] = useState("All");
-  const cities = ["All", ...Array.from(new Set(SAMPLE_CANDIDATES.map((c) => c.city)))];
-  const filtered = cityFilter === "All" ? SAMPLE_CANDIDATES : SAMPLE_CANDIDATES.filter((c) => c.city === cityFilter);
+  const [langFilter, setLangFilter] = useState("All");
+  const [minAge, setMinAge] = useState(18);
+  const [maxAge, setMaxAge] = useState(100);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+
+  // Build API filters
+  const apiFilters = useMemo(() => ({
+    ageRange: [minAge, maxAge] as [number, number],
+    location: cityFilter === "All" ? undefined : cityFilter,
+    languages: langFilter === "All" ? undefined
+      : langFilter === "Bilingual" ? ["Spanish"]
+      : [langFilter],
+  }), [cityFilter, langFilter, minAge, maxAge]);
+
+  const { candidates, totalScanned, totalMatched, loading } = useRecruitCandidates(apiFilters);
+
+  // Derive cities from candidates for filter dropdown
+  const cities = useMemo(() => {
+    const set = new Set(candidates.map((c) => c.location));
+    return ["All", ...Array.from(set).sort()];
+  }, [candidates]);
+
+  // Bilingual count
+  const bilingualCount = candidates.filter((c) => c.languages.length > 1).length;
+
+  function toggleSelect(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    if (selected.size === candidates.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(candidates.map((c) => c.id)));
+    }
+  }
+
+  function handleExport() {
+    const data = candidates
+      .filter((c) => selected.size === 0 || selected.has(c.id))
+      .map((c: Candidate) => ({
+        ID: c.id,
+        Name: c.name,
+        Age: c.age,
+        City: c.location,
+        Precinct: c.precinct,
+        Languages: c.languages.join(", "),
+        "AI Score": c.aiScore,
+        Reason: c.aiReason,
+      }));
+    exportToCSV(data, `civiq-recruit-shortlist-${new Date().toISOString().slice(0, 10)}`);
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center rounded-2xl border border-slate-100 bg-white py-20 shadow-sm">
+        <Loader2 className="h-5 w-5 animate-spin text-slate-400" />
+        <span className="ml-2 text-sm text-slate-400">Scanning voter records…</span>
+      </div>
+    );
+  }
 
   return (
     <div className="rounded-2xl border border-slate-100 bg-white shadow-sm">
       {/* Filter bar */}
-      <div className="flex items-center gap-4 border-b border-slate-100 px-5 py-3">
+      <div className="flex flex-wrap items-center gap-4 border-b border-slate-100 px-5 py-3">
         <div className="flex items-center gap-1.5 text-xs font-semibold text-slate-500">
           <SlidersHorizontal className="h-3.5 w-3.5" />
           Filter
         </div>
-        <div className="flex items-center gap-2">
+
+        {/* City */}
+        <div className="flex items-center gap-1.5">
           <MapPin className="h-3.5 w-3.5 text-slate-400" />
           <select
             value={cityFilter}
@@ -48,8 +107,63 @@ export default function RecruitTable() {
             {cities.map((c) => <option key={c}>{c}</option>)}
           </select>
         </div>
-        <div className="ml-auto text-xs text-slate-400">
-          <span className="font-semibold text-slate-700">{filtered.length}</span> candidates
+
+        {/* Language */}
+        <div className="flex items-center gap-1.5">
+          <Globe className="h-3.5 w-3.5 text-slate-400" />
+          <select
+            value={langFilter}
+            onChange={(e) => setLangFilter(e.target.value)}
+            className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700 focus:outline-none"
+          >
+            <option>All</option>
+            <option>English</option>
+            <option>Spanish</option>
+            <option>Bilingual</option>
+          </select>
+        </div>
+
+        {/* Age range */}
+        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+          Age
+          <input
+            type="number"
+            min={18}
+            max={100}
+            value={minAge}
+            onChange={(e) => setMinAge(Number(e.target.value))}
+            className="w-14 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs tabular-nums text-slate-700 focus:outline-none"
+          />
+          <span>–</span>
+          <input
+            type="number"
+            min={18}
+            max={100}
+            value={maxAge}
+            onChange={(e) => setMaxAge(Number(e.target.value))}
+            className="w-14 rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-xs tabular-nums text-slate-700 focus:outline-none"
+          />
+        </div>
+
+        {/* Stats + export */}
+        <div className="ml-auto flex items-center gap-4">
+          <div className="text-xs text-slate-400">
+            <span className="font-semibold text-slate-700">{totalMatched}</span>
+            <span className="mx-0.5">/</span>
+            <span>{totalScanned}</span> matched
+            {bilingualCount > 0 && (
+              <span className="ml-2 text-blue-600">· {bilingualCount} bilingual</span>
+            )}
+          </div>
+          {selected.size > 0 && (
+            <button
+              onClick={handleExport}
+              className="flex items-center gap-1.5 rounded-full bg-emerald-600 px-3 py-1 text-xs font-semibold text-white transition hover:bg-emerald-700"
+            >
+              <Download className="h-3 w-3" />
+              Export {selected.size}
+            </button>
+          )}
         </div>
       </div>
 
@@ -58,6 +172,14 @@ export default function RecruitTable() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-50 text-left text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+              <th className="px-5 py-3 text-center">
+                <input
+                  type="checkbox"
+                  checked={selected.size === candidates.length && candidates.length > 0}
+                  onChange={toggleAll}
+                  className="h-3.5 w-3.5 rounded border-slate-300 accent-emerald-600"
+                />
+              </th>
               <th className="px-5 py-3">Name</th>
               <th className="px-5 py-3">Age</th>
               <th className="px-5 py-3">City / Precinct</th>
@@ -67,8 +189,21 @@ export default function RecruitTable() {
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {filtered.map((c) => (
-              <tr key={c.id} className="transition hover:bg-slate-50/60">
+            {candidates.map((c) => (
+              <tr
+                key={c.id}
+                className={`transition ${
+                  selected.has(c.id) ? "bg-emerald-50/50" : "hover:bg-slate-50/60"
+                }`}
+              >
+                <td className="px-5 py-3.5 text-center">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(c.id)}
+                    onChange={() => toggleSelect(c.id)}
+                    className="h-3.5 w-3.5 rounded border-slate-300 accent-emerald-600"
+                  />
+                </td>
                 <td className="px-5 py-3.5">
                   <div className="flex items-center gap-2.5">
                     <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-slate-100 text-[10px] font-semibold text-slate-600">
@@ -82,7 +217,7 @@ export default function RecruitTable() {
                 </td>
                 <td className="px-5 py-3.5 text-sm tabular-nums text-slate-600">{c.age}</td>
                 <td className="px-5 py-3.5">
-                  <p className="text-sm text-slate-700">{c.city}</p>
+                  <p className="text-sm text-slate-700">{c.location}</p>
                   <p className="text-[11px] text-slate-400">{c.precinct}</p>
                 </td>
                 <td className="px-5 py-3.5">
@@ -91,7 +226,9 @@ export default function RecruitTable() {
                       <span
                         key={l}
                         className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                          l === "Spanish" ? "bg-blue-50 text-blue-600" : "bg-slate-100 text-slate-500"
+                          l === "Spanish" ? "bg-blue-50 text-blue-600"
+                          : l === "Arabic" ? "bg-purple-50 text-purple-600"
+                          : "bg-slate-100 text-slate-500"
                         }`}
                       >
                         {l}
@@ -100,16 +237,22 @@ export default function RecruitTable() {
                   </div>
                 </td>
                 <td className="px-5 py-3.5">
-                  <ScorePill score={c.score} />
+                  <ScorePill score={c.aiScore} />
                 </td>
                 <td className="max-w-[180px] truncate px-5 py-3.5 text-xs text-slate-400">
-                  {c.reason}
+                  {c.aiReason}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {candidates.length === 0 && (
+        <div className="px-5 py-12 text-center text-sm text-slate-400">
+          No candidates match the current filters. Try adjusting your criteria.
+        </div>
+      )}
     </div>
   );
 }
