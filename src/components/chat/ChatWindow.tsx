@@ -114,58 +114,59 @@ const FOLLOW_UP_SUGGESTIONS_ES = [
 
 // ── Sub-components ────────────────────────────────────────────────────────────
 
+function ThinkingAnimation() {
+  return (
+    <div className="mb-6 flex items-start gap-3">
+      <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-full ring-2 ring-amber-200 shadow-sm">
+        <Image src="/logo.jpeg" alt="Sam" fill className="object-cover" unoptimized />
+      </div>
+      <div className="flex flex-col gap-2 pt-1">
+        {/* Animated shimmer bars */}
+        <div className="flex items-center gap-2">
+          <div className="h-2.5 w-32 rounded-full skeleton-shimmer" />
+          <div className="h-2.5 w-20 rounded-full skeleton-shimmer" style={{ animationDelay: "0.2s" }} />
+        </div>
+        <div className="h-2.5 w-48 rounded-full skeleton-shimmer" style={{ animationDelay: "0.4s" }} />
+        <div className="h-2.5 w-36 rounded-full skeleton-shimmer" style={{ animationDelay: "0.6s" }} />
+        {/* Typing dots */}
+        <div className="mt-1 flex items-center gap-1.5">
+          {[0,1,2].map(i => (
+            <span key={i} className="h-2 w-2 rounded-full bg-amber-400 animate-bounce shadow-sm"
+              style={{ animationDelay: `${i * 0.18}s`, animationDuration: "0.9s" }} />
+          ))}
+          <span className="ml-1 text-[11px] text-slate-400 font-medium">Sam is thinking…</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ToolCallPanel({ steps, language }: { steps: ToolStep[]; language: Language }) {
   return (
-    <div className="mb-6 ml-14 flex flex-col gap-1.5">
+    <div className="mb-4 ml-11 flex flex-col gap-1.5">
       {steps.map((step) => {
         const Icon = step.icon;
         return (
           <div
             key={step.id}
-            className={`flex items-center gap-2.5 text-sm transition-all duration-500 ${
-              step.status === "pending"
-                ? "opacity-25"
-                : step.status === "active"
-                ? "opacity-100"
-                : "opacity-60"
+            className={`flex items-center gap-2 transition-all duration-500 ${
+              step.status === "pending" ? "opacity-20" : step.status === "active" ? "opacity-100" : "opacity-50"
             }`}
           >
-            <div
-              className={`flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-md ${
-                step.status === "active"
-                  ? "bg-amber-100 text-amber-600"
-                  : step.status === "done"
-                  ? "bg-emerald-50 text-emerald-500"
-                  : "bg-slate-100 text-slate-400"
-              }`}
-            >
-              {step.status === "active" ? (
-                <Icon className="h-3.5 w-3.5 animate-pulse" />
-              ) : step.status === "done" ? (
-                <SealCheck className="h-2.5 w-2.5" weight="fill" />
-              ) : (
-                <Icon className="h-3.5 w-3.5" />
-              )}
+            <div className={`flex h-5 w-5 flex-shrink-0 items-center justify-center rounded-lg ${
+              step.status === "active" ? "bg-amber-100 text-amber-600" :
+              step.status === "done"   ? "bg-emerald-50 text-emerald-500" : "bg-slate-100 text-slate-400"
+            }`}>
+              {step.status === "done" ? <SealCheck className="h-3 w-3" weight="fill" /> : <Icon className="h-3 w-3" />}
             </div>
-            <span
-              className={`text-xs ${
-                step.status === "active"
-                  ? "font-medium text-amber-700"
-                  : step.status === "done"
-                  ? "text-slate-500 line-through decoration-slate-300"
-                  : "text-slate-400"
-              }`}
-            >
-              {step.label}
-            </span>
+            <span className={`text-[11px] font-medium ${
+              step.status === "active" ? "text-amber-700" :
+              step.status === "done"   ? "text-slate-400 line-through" : "text-slate-300"
+            }`}>{step.label}</span>
             {step.status === "active" && (
-              <span className="flex gap-0.5">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="h-1 w-1 rounded-full bg-amber-400 animate-bounce"
-                    style={{ animationDelay: `${i * 0.15}s` }}
-                  />
+              <span className="flex gap-0.5 ml-0.5">
+                {[0,1,2].map(i => (
+                  <span key={i} className="h-1 w-1 rounded-full bg-amber-400 animate-bounce" style={{ animationDelay: `${i*0.15}s` }} />
                 ))}
               </span>
             )}
@@ -194,24 +195,38 @@ function KnowledgePanel({ isActive, query }: { isActive: boolean; query: string 
   const requestRef = useRef<number>(null);
   const lastMousePos = useRef({ x: 0, y: 0 });
 
-  // Fetch real graph data
+  // Fetch real graph data — retries every 5s until sidecar is up (max 12 attempts)
   useEffect(() => {
-    fetch("/api/knowledge-graph")
-      .then(r => r.json())
-      .then(data => {
-        if (!data.nodes?.length) return;
-        const initialized: GNode[] = data.nodes.map((n: any) => ({
-          ...n,
-          x: (Math.random() - 0.5) * 400,
-          y: (Math.random() - 0.5) * 400,
-          vx: 0, vy: 0,
-          size: NODE_RADII[n.type as keyof typeof NODE_RADII] ?? 4,
-        }));
-        setNodes(initialized);
-        setEdges(data.edges);
-        setMeta(data.meta);
-      })
-      .catch(() => {});
+    let attempts = 0;
+    const MAX = 12;
+    let timer: ReturnType<typeof setTimeout>;
+
+    const tryFetch = () => {
+      fetch("/api/knowledge-graph")
+        .then(r => r.json())
+        .then(data => {
+          if (data.nodes?.length) {
+            const initialized: GNode[] = data.nodes.map((n: any) => ({
+              ...n,
+              x: (Math.random() - 0.5) * 400,
+              y: (Math.random() - 0.5) * 400,
+              vx: 0, vy: 0,
+              size: NODE_RADII[n.type as keyof typeof NODE_RADII] ?? 4,
+            }));
+            setNodes(initialized);
+            setEdges(data.edges);
+            setMeta(data.meta);
+          } else if (++attempts < MAX) {
+            timer = setTimeout(tryFetch, 5000);
+          }
+        })
+        .catch(() => {
+          if (++attempts < MAX) timer = setTimeout(tryFetch, 5000);
+        });
+    };
+
+    tryFetch();
+    return () => clearTimeout(timer);
   }, []);
 
   // Simulation Loop
@@ -469,38 +484,36 @@ function SourceCard({
 
   const handleClick = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (sourceMeta && sourceMeta.length > 0 && onOpenSource) {
-      onOpenSource(sourceMeta, 0);
-    }
+    if (sourceMeta && sourceMeta.length > 0 && onOpenSource) onOpenSource(sourceMeta, 0);
   };
 
   return (
     <button
       onClick={handleClick}
-      className="mt-6 w-full text-left inline-flex items-center gap-4 rounded-2xl border-2 border-amber-200/60 bg-gradient-to-br from-amber-50/80 via-orange-50/50 to-amber-50/80 px-5 py-4 transition-all hover:border-amber-400 hover:shadow-xl hover:shadow-amber-100 hover:-translate-y-1 hover:scale-[1.02] group cursor-pointer backdrop-blur-sm"
+      className="mt-5 w-full text-left group relative overflow-hidden rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50 px-4 py-3.5 transition-all duration-300 hover:border-amber-400 hover:shadow-lg hover:shadow-amber-100/80 hover:-translate-y-0.5 active:scale-[0.99]"
     >
-      <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md group-hover:shadow-lg group-hover:scale-110 transition-all">
-        <BookOpen className="h-6 w-6" weight="duotone" />
-      </div>
-      <div className="flex-1 min-w-0">
-        <p className="text-[11px] font-bold uppercase tracking-wider text-amber-600 mb-1">📄 View in PDF</p>
-        <p className="text-sm font-bold text-amber-900 truncate mb-1">{docName}</p>
-        <div className="flex items-center gap-2 flex-wrap">
-          {sectionName && (
-            <p className="text-[11px] text-amber-700 truncate max-w-[300px] bg-amber-100/50 px-2 py-0.5 rounded-md">
-              § {sectionName.length > 60 ? sectionName.substring(0, 60) + '...' : sectionName}
-            </p>
-          )}
-          {pageNum && (
-            <span className="text-[11px] font-bold text-white bg-gradient-to-r from-amber-500 to-orange-600 rounded-full px-3 py-1 shadow-sm">
-              Page {pageNum}
-            </span>
-          )}
+      {/* Glow blob */}
+      <div className="pointer-events-none absolute -right-8 -top-8 h-24 w-24 rounded-full bg-amber-300/20 blur-2xl group-hover:bg-amber-300/40 transition-all duration-500" />
+      <div className="flex items-center gap-3">
+        <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 text-white shadow-md group-hover:shadow-amber-300/60 group-hover:scale-105 transition-all duration-300">
+          <BookOpen className="h-5 w-5" weight="duotone" />
         </div>
-      </div>
-      <div className="flex flex-col items-center gap-1 px-2">
-        <CaretRight className="h-5 w-5 text-amber-500 transition-transform group-hover:translate-x-2 group-hover:scale-125" weight="bold" />
-        <span className="text-[10px] text-amber-600 font-bold uppercase tracking-wide">Open</span>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-0.5">
+            <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500">Source</p>
+            {pageNum && (
+              <span className="rounded-full bg-amber-500 px-2.5 py-0.5 text-[10px] font-bold text-white shadow-sm">
+                p.{pageNum}
+              </span>
+            )}
+          </div>
+          <p className="text-xs font-semibold text-slate-800 truncate">
+            {sectionName.length > 55 ? sectionName.slice(0, 55) + "…" : sectionName}
+          </p>
+        </div>
+        <div className="flex-shrink-0 flex h-8 w-8 items-center justify-center rounded-xl bg-white border border-amber-200 shadow-sm group-hover:bg-amber-500 group-hover:border-amber-500 group-hover:text-white transition-all duration-300 text-amber-500">
+          <CaretRight className="h-4 w-4 transition-transform group-hover:translate-x-0.5" weight="bold" />
+        </div>
       </div>
     </button>
   );
@@ -635,6 +648,8 @@ export default function ChatWindow() {
   const [activeSourceMeta, setActiveSourceMeta] = useState<SourceMeta[] | null>(null);
   const [activeSourceIndex, setActiveSourceIndex] = useState(0);
   const [backendModel, setBackendModel] = useState<"ollama" | "groq" | null>(null);
+  // Mobile panel toggles
+  const [mobilePanel, setMobilePanel] = useState<"none" | "source" | "graph">("none");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -1005,106 +1020,137 @@ export default function ChatWindow() {
   const suggested = rawSuggested.filter((s, i, arr) => arr.findIndex(x => x.q === s.q) === i);
   const isEmpty = messages.length === 0;
 
+  // Open source panel on mobile too
+  const handleOpenSourceMobile = useCallback((meta: SourceMeta[], index: number) => {
+    setActiveSourceMeta(meta);
+    setActiveSourceIndex(index);
+    setSourceViewerExpanded(true);
+    setMobilePanel("source");
+  }, []);
+
   return (
-    <div className="flex h-full font-[family-name:var(--font-inter)]">
+    <div className="flex h-full font-[family-name:var(--font-inter)] relative">
+      {/* ── Mobile overlay panel (bottom sheet) ── */}
+      {mobilePanel !== "none" && (
+        <div className="fixed inset-0 z-50 flex flex-col justify-end md:hidden">
+          {/* Backdrop */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setMobilePanel("none")} />
+          {/* Sheet */}
+          <div className="relative z-10 flex flex-col rounded-t-3xl bg-white shadow-2xl" style={{ height: "80dvh" }}>
+            {/* Drag handle */}
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+              <div className="h-1.5 w-12 rounded-full bg-slate-200" />
+            </div>
+            <div className="flex-1 overflow-hidden">
+              {mobilePanel === "source" && activeSourceMeta ? (
+                <SourceViewer
+                  key={`mobile-${activeSourceMeta[0]?.documentId}-${activeSourceMeta[0]?.pageNumber}`}
+                  sourceMeta={activeSourceMeta}
+                  activeIndex={activeSourceIndex}
+                  onClose={() => { setMobilePanel("none"); setActiveSourceMeta(null); }}
+                  onSelectSource={setActiveSourceIndex}
+                />
+              ) : mobilePanel === "graph" ? (
+                <KnowledgePanel isActive={isLoading} query={currentQuery} />
+              ) : null}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Main Chat Column ── */}
       <div className="flex flex-1 flex-col bg-[#f8f7f5] min-w-0">
 
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-md shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 bg-white/95 px-4 sm:px-6 py-3 sm:py-4 backdrop-blur-md shadow-sm">
           <div className="flex items-center gap-3">
-            <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full shadow-md ring-2 ring-amber-300">
+            <div className="relative h-9 w-9 sm:h-10 sm:w-10 flex-shrink-0 overflow-hidden rounded-2xl shadow-md ring-2 ring-amber-300">
               <Image src="/logo.jpeg" alt="CivIQ" fill className="object-cover" unoptimized />
             </div>
             <div>
-              <p className="text-base font-bold text-slate-900">
-                Ask Sam
-              </p>
-              <p className="text-xs text-slate-500 flex items-center gap-1.5">
-                <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                Poll Worker AI Assistant · {language === "en" ? "English" : "Español"}{backendModel && (
-                  <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${backendModel === "ollama" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
-                    {backendModel === "ollama" ? "🔒 Local" : "☁ Groq"}
-                  </span>
-                )}
+              <p className="text-sm sm:text-base font-bold text-slate-900">Ask Sam</p>
+              <p className="text-[10px] sm:text-xs text-slate-500 flex items-center gap-1.5 flex-wrap">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span className="hidden sm:inline">Poll Worker AI ·</span> {language === "en" ? "English" : "Español"}
+                <span className={`rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${
+                  backendModel === "ollama" ? "bg-emerald-100 text-emerald-700"
+                  : backendModel === "groq" ? "bg-blue-100 text-blue-700"
+                  : "bg-slate-100 text-slate-400"
+                }`}>
+                  {backendModel === "ollama" ? "🔒 Local" : backendModel === "groq" ? "☁ Groq" : "⚡ AI"}
+                </span>
               </p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Font size */}
-            <div className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-2 py-1.5 shadow-sm">
-              <button
-                onClick={() => setFontSize((s) => Math.max(12, s - 1))}
-                className="text-slate-500 transition hover:text-slate-800 hover:scale-110"
-                title="Decrease font size"
-              >
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Font size — hidden on mobile */}
+            <div className="hidden sm:flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-2 py-1.5 shadow-sm">
+              <button onClick={() => setFontSize(s => Math.max(12, s - 1))} className="text-slate-500 transition hover:text-slate-800" title="Decrease font size">
                 <MagnifyingGlassMinus className="h-4 w-4" weight="bold" />
               </button>
-              <span className="text-xs font-semibold text-slate-700 min-w-[32px] text-center">{fontSize}px</span>
-              <button
-                onClick={() => setFontSize((s) => Math.min(20, s + 1))}
-                className="text-slate-500 transition hover:text-slate-800 hover:scale-110"
-                title="Increase font size"
-              >
+              <span className="text-xs font-semibold text-slate-700 min-w-[28px] text-center">{fontSize}px</span>
+              <button onClick={() => setFontSize(s => Math.min(20, s + 1))} className="text-slate-500 transition hover:text-slate-800" title="Increase font size">
                 <MagnifyingGlassPlus className="h-4 w-4" weight="bold" />
               </button>
             </div>
 
             {/* TTS */}
             <button
-              onClick={isSpeaking ? stopSpeaking : () => {
-                const last = [...messages].reverse().find((m) => m.role === "assistant");
-                if (last) speak(last.content);
-              }}
-              className={`rounded-xl border p-2 transition-all shadow-sm ${
-                isSpeaking
-                  ? "border-amber-400 bg-gradient-to-br from-amber-50 to-orange-50 text-amber-600 shadow-md scale-105"
-                  : "border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:shadow-md hover:scale-105"
-              }`}
-              title={isSpeaking ? "Stop speaking" : "Read aloud"}
-            >
+              onClick={isSpeaking ? stopSpeaking : () => { const last = [...messages].reverse().find(m => m.role === "assistant"); if (last) speak(last.content); }}
+              className={`rounded-2xl border p-2 transition-all shadow-sm ${
+                isSpeaking ? "border-amber-400 bg-amber-50 text-amber-600 scale-105" : "border-slate-200 bg-white text-slate-500 hover:text-slate-800 hover:shadow-md"
+              }`} title={isSpeaking ? "Stop" : "Read aloud"}>
               {isSpeaking ? <SpeakerSlash className="h-4 w-4" weight="fill" /> : <SpeakerHigh className="h-4 w-4" weight="fill" />}
             </button>
 
             {/* Language */}
             <button
-              onClick={() => setLanguage((l) => (l === "en" ? "es" : "en"))}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2 text-xs font-semibold text-slate-700 transition-all shadow-sm hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700 hover:shadow-md hover:scale-105"
+              onClick={() => setLanguage(l => l === "en" ? "es" : "en")}
+              className="inline-flex items-center gap-1.5 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 transition-all shadow-sm hover:border-amber-300 hover:bg-amber-50 hover:text-amber-700"
             >
               <Globe className="h-4 w-4" weight="bold" />
               {language === "en" ? "EN" : "ES"}
+            </button>
+
+            {/* Mobile: Knowledge Graph toggle */}
+            <button
+              onClick={() => setMobilePanel(p => p === "graph" ? "none" : "graph")}
+              className="md:hidden inline-flex items-center justify-center rounded-2xl border border-slate-200 bg-white p-2 text-slate-500 shadow-sm hover:border-indigo-300 hover:text-indigo-600 transition-all"
+              title="Knowledge Graph"
+            >
+              <Graph className="h-4 w-4" weight="bold" />
             </button>
           </div>
         </div>
 
         {/* Messages canvas */}
-        <div className="flex-1 overflow-y-auto px-6 py-8 sm:px-10">
+        <div className="flex-1 overflow-y-auto px-4 sm:px-6 py-6 sm:py-8 lg:px-10">
           {isEmpty ? (
-            <div className="flex h-full flex-col items-center justify-center">
+            <div className="flex h-full flex-col items-center justify-center px-4">
               {/* Hero avatar */}
-              <div className="relative mb-6 h-28 w-28 overflow-hidden rounded-full shadow-xl ring-4 ring-amber-100">
+              <div className="relative mb-5 h-24 w-24 sm:h-28 sm:w-28 overflow-hidden rounded-[2rem] shadow-xl ring-4 ring-amber-100">
                 <Image src="/sam.gif" alt="Sam" fill className="object-cover" unoptimized />
               </div>
-              <h2 className="font-[family-name:var(--font-playfair)] text-3xl font-medium text-slate-900">
+              <h2 className="font-[family-name:var(--font-playfair)] text-2xl sm:text-3xl font-medium text-slate-900">
                 {language === "en" ? "Hi, I'm Sam." : "Hola, soy Sam."}
               </h2>
-              <p className="mt-3 max-w-md text-center leading-relaxed text-slate-500" style={{ fontSize: `${fontSize - 1}px` }}>
+              <p className="mt-2 max-w-sm sm:max-w-md text-center leading-relaxed text-slate-500 text-sm" style={{ fontSize: `${Math.min(fontSize - 1, 14)}px` }}>
                 {language === "en"
                   ? "Your AI-powered poll worker assistant. Ask me anything about election day procedures."
                   : "Tu asistente electoral con IA. Pregúntame sobre procedimientos electorales."}
               </p>
 
               {/* Quick question cards */}
-              <div className="mt-10 grid w-full max-w-2xl grid-cols-2 gap-3 sm:grid-cols-3">
+              <div className="mt-8 grid w-full max-w-2xl grid-cols-2 gap-2.5 sm:grid-cols-3">
                 {suggested.map(({ q, displayQ, displayCategory, icon: Icon }, idx) => (
                   <button
                     key={`${idx}-${displayQ}`}
                     onClick={() => sendMessage(q)}
-                    className="group flex flex-col items-start gap-2 rounded-3xl border border-slate-200 bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-1 hover:border-blue-800 hover:shadow-lg"
+                    className="group flex flex-col items-start gap-2 rounded-3xl border border-slate-200 bg-white p-3.5 sm:p-4 text-left shadow-sm transition-all hover:-translate-y-1 hover:border-indigo-200 hover:shadow-lg active:scale-[0.98]"
                   >
-                    <Icon className="h-5 w-5 text-slate-500 group-hover:text-[#B22234] transition-colors" weight="duotone" />
-                    <span className="text-[10px] font-bold uppercase tracking-widest text-[#3C3B6E] group-hover:text-[#B22234] transition-colors">{displayCategory}</span>
-                    <span className="text-xs leading-snug text-slate-700 group-hover:text-slate-900" style={{ fontSize: `${fontSize - 3}px` }}>
+                    <Icon className="h-4 w-4 sm:h-5 sm:w-5 text-slate-400 group-hover:text-[#B22234] transition-colors" weight="duotone" />
+                    <span className="text-[9px] sm:text-[10px] font-bold uppercase tracking-widest text-[#3C3B6E] group-hover:text-[#B22234] transition-colors">{displayCategory}</span>
+                    <span className="text-[11px] sm:text-xs leading-snug text-slate-600 group-hover:text-slate-900" style={{ fontSize: `${Math.min(fontSize - 3, 12)}px` }}>
                       {displayQ}
                     </span>
                   </button>
@@ -1116,9 +1162,9 @@ export default function ChatWindow() {
               {messages.map((msg) => {
                 if (msg.role === "user") {
                   return (
-                    <div key={msg.id} className="mb-8 flex justify-end animate-in slide-in-from-right duration-300">
+                    <div key={msg.id} className="mb-6 flex justify-end animate-in slide-in-from-right duration-300">
                       <div
-                        className="max-w-[75%] rounded-3xl rounded-tr-md bg-gradient-to-br from-[#3C3B6E] to-[#2a2952] px-6 py-4 text-white shadow-lg hover:shadow-xl transition-shadow"
+                        className="max-w-[80%] sm:max-w-[75%] rounded-3xl rounded-tr-lg bg-gradient-to-br from-[#3C3B6E] to-[#2a2952] px-5 py-3.5 text-white shadow-lg"
                         style={{ fontSize: `${fontSize}px`, lineHeight: "1.7" }}
                       >
                         {msg.content}
@@ -1126,7 +1172,7 @@ export default function ChatWindow() {
                     </div>
                   );
                 }
-                const assistantMessages = messages.filter((m) => m.role === "assistant");
+                const assistantMessages = messages.filter(m => m.role === "assistant");
                 const isLastAssistant = msg === assistantMessages[assistantMessages.length - 1];
                 return (
                   <AIMessage
@@ -1136,21 +1182,23 @@ export default function ChatWindow() {
                     toolSteps={msg.id === streamingId ? toolSteps : []}
                     fontSize={fontSize}
                     language={language}
-                    onOpenSource={handleOpenSource}
-                    onSuggest={(q) => sendMessage(q)}
+                    onOpenSource={handleOpenSourceMobile}
+                    onSuggest={q => sendMessage(q)}
                     isLastAssistant={isLastAssistant}
                   />
                 );
               })}
+              {/* Thinking animation while loading */}
+              {isLoading && !streamingId && <ThinkingAnimation />}
               <div ref={messagesEndRef} />
             </div>
           )}
         </div>
 
         {/* Input bar */}
-        <div className="border-t border-slate-200 bg-gradient-to-b from-white to-slate-50/50 px-6 py-5 sm:px-10 backdrop-blur-sm">
+        <div className="border-t border-slate-200 bg-white/90 px-3 sm:px-6 py-3 sm:py-4 lg:px-10 backdrop-blur-sm">
           <div className="mx-auto max-w-2xl">
-            <div className="flex items-end gap-3 rounded-3xl border-2 border-slate-300/50 bg-white px-6 py-4 shadow-lg transition-all focus-within:border-amber-400 focus-within:ring-4 focus-within:ring-amber-400/20 focus-within:shadow-xl hover:border-slate-400/70">
+            <div className="flex items-end gap-2 rounded-3xl border-2 border-slate-200 bg-white px-4 sm:px-5 py-3 shadow-lg transition-all focus-within:border-amber-400 focus-within:ring-4 focus-within:ring-amber-400/20 focus-within:shadow-xl">
               <textarea
                 ref={textareaRef}
                 rows={1}
@@ -1158,64 +1206,58 @@ export default function ChatWindow() {
                 onChange={handleTextareaChange}
                 onKeyDown={handleKeyDown}
                 placeholder={
-                  isListening
-                    ? "🎙 Listening…"
-                    : language === "en"
-                    ? "Ask about election procedures…"
-                    : "Pregunta sobre procedimientos electorales…"
+                  isListening ? "🎙 Listening…"
+                  : language === "en" ? "Ask about election procedures…"
+                  : "Pregunta sobre procedimientos electorales…"
                 }
                 className="flex-1 resize-none bg-transparent leading-relaxed text-slate-800 placeholder-slate-400 outline-none"
                 style={{ maxHeight: "160px", fontSize: `${fontSize}px` }}
                 disabled={isLoading}
               />
-              <div className="flex items-center gap-2">
-                <div className="flex gap-2.5">
-                  <button
-                    onClick={toggleListening}
-                    className={`rounded-xl p-2.5 transition-all shadow-sm ${
-                      isListening
-                        ? "bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-md hover:scale-105 animate-pulse"
-                        : "bg-slate-100 text-slate-600 hover:bg-slate-200 hover:shadow-md hover:scale-105"
-                    }`}
-                    title={isListening ? "Stop listening" : "Speak your question"}
-                  >
-                    {isListening ? <MicrophoneSlash className="h-5 w-5" weight="fill" /> : <Microphone className="h-5 w-5" weight="fill" />}
-                  </button>
-                  <button
-                    onClick={() => sendMessage(input)}
-                    disabled={!input.trim() || isLoading}
-                    className="rounded-xl bg-gradient-to-br from-[#3C3B6E] to-[#2a2952] p-2.5 text-white transition-all hover:shadow-lg hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 shadow-md"
-                    title="Send message"
-                  >
-                    <PaperPlaneRight className="h-5 w-5" weight="fill" />
-                  </button>
-                </div>
+              <div className="flex items-center gap-2 pb-0.5">
+                <button
+                  onClick={toggleListening}
+                  className={`rounded-2xl p-2 transition-all ${
+                    isListening
+                      ? "bg-red-500 text-white animate-pulse shadow-md shadow-red-200"
+                      : "text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                  }`}
+                  title={isListening ? "Stop listening" : "Speak"}
+                >
+                  {isListening ? <MicrophoneSlash className="h-5 w-5" weight="fill" /> : <Microphone className="h-5 w-5" weight="fill" />}
+                </button>
+                <button
+                  onClick={() => sendMessage(input)}
+                  disabled={!input.trim() || isLoading}
+                  className="rounded-2xl bg-gradient-to-br from-[#3C3B6E] to-[#2a2952] p-2.5 text-white transition-all hover:shadow-lg hover:scale-105 disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:scale-100 shadow-md"
+                  title="Send"
+                >
+                  {isLoading
+                    ? <span className="h-5 w-5 flex items-center justify-center"><span className="h-3 w-3 rounded-full border-2 border-white/40 border-t-white animate-spin" /></span>
+                    : <PaperPlaneRight className="h-5 w-5" weight="fill" />
+                  }
+                </button>
               </div>
             </div>
-            <p className="mt-3 text-center text-[11px] text-slate-400">
-              {language === "en"
-                ? "Sam answers only from official poll worker training documents. · Enter to send, Shift+Enter for new line."
-                : "Sam responde solo desde documentos oficiales. · Enter para enviar."}
+            <p className="mt-2 text-center text-[10px] text-slate-400">
+              {language === "en" ? "Sam answers only from official training documents · Enter to send" : "Sam responde solo desde documentos oficiales · Enter para enviar"}
             </p>
           </div>
         </div>
       </div>
 
-      {/* ── Right Panel: Knowledge Graph + Expandable Source Viewer ── */}
-      <div className={`relative transition-all duration-500 ease-in-out ${
-        sourceViewerExpanded ? 'w-[55%]' : 'w-[380px]'
-      } border-l border-slate-200 bg-white shadow-2xl flex flex-col`}>
+      {/* ── Right Panel: hidden on mobile, shown on md+ ── */}
+      <div className={`hidden md:flex relative transition-all duration-500 ease-in-out ${
+        sourceViewerExpanded ? 'w-[52%]' : 'w-[360px] lg:w-[400px]'
+      } border-l border-slate-200 bg-white shadow-2xl flex-col`}>
         {activeSourceMeta ? (
           <>
-            {/* Collapse/Expand Toggle */}
             <button
               onClick={() => setSourceViewerExpanded(!sourceViewerExpanded)}
-              className="absolute -left-10 top-1/2 -translate-y-1/2 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg transition-all hover:scale-110 hover:shadow-xl"
-              title={sourceViewerExpanded ? "Collapse viewer" : "Expand viewer"}
+              className="absolute -left-5 top-1/2 -translate-y-1/2 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg transition-all hover:scale-110 hover:shadow-xl"
+              title={sourceViewerExpanded ? "Collapse" : "Expand"}
             >
-              <CaretRight className={`h-5 w-5 transition-transform duration-300 ${
-                sourceViewerExpanded ? 'rotate-180' : ''
-              }`} weight="bold" />
+              <CaretRight className={`h-5 w-5 transition-transform duration-300 ${sourceViewerExpanded ? 'rotate-180' : ''}`} weight="bold" />
             </button>
             <SourceViewer
               sourceMeta={activeSourceMeta}

@@ -693,12 +693,23 @@ def normalize_scores(scored: List[tuple]) -> Dict[str, float]:
 
 
 # Sections/content patterns that are reference/appendix material — penalise in ranking
+# NOTE: 'election night only' and 'nightly closing' deliberately excluded —
+# these sections contain the packing checklist answers (RED/BLUE transport box)
 _LOW_PRIORITY_SECTIONS = re.compile(
-    r'appendix|faq|glossary|table of contents|index|job duty card|marshal job|election night only|nightly closing',
+    r'appendix|faq|glossary|table of contents|index|job duty card|marshal job',
     re.IGNORECASE
 )
 _LOW_PRIORITY_CONTENT = re.compile(
     r'Appendix\s+\d+|FAQ,? continued|Job Duty Card|Marshal Job Duty',
+    re.IGNORECASE
+)
+# Queries about packing / transport boxes should boost closing/checklist sections
+_PACKING_QUERY = re.compile(
+    r'what\s+goes\s+in|transport\s+box|packing\s+check|red\s+box|blue\s+box|closing\s+check|election\s+night\s+close',
+    re.IGNORECASE
+)
+_CLOSING_SECTIONS = re.compile(
+    r'packing\s+checklist|election\s+night\s+only|nightly\s+closing|sealing\s+election|closing\s+check',
     re.IGNORECASE
 )
 
@@ -813,6 +824,9 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
         # Penalise by chunk content too (catches misclassified appendix pages)
         if _LOW_PRIORITY_CONTENT.search(raw):
             adj -= 0.4
+        # Boost closing/packing sections when query asks about transport boxes
+        if _PACKING_QUERY.search(query) and _CLOSING_SECTIONS.search(title):
+            adj += 0.4
         return adj
 
     # ── Fuse ──────────────────────────────────────────────────────────────────

@@ -7,10 +7,47 @@ import { logInteraction } from "@/lib/audit-logger";
 import { ChatRequest } from "@/types";
 import { GROQ_MODEL } from "@/lib/constants";
 
+// ── In-memory rate limiter (per IP, resets every minute) ──────────────────────
+const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+const RATE_LIMIT = 30;       // max requests per window
+const RATE_WINDOW_MS = 60_000; // 1-minute window
+
+function checkRateLimit(ip: string): boolean {
+  const now = Date.now();
+  const entry = rateLimitMap.get(ip);
+  if (!entry || now > entry.resetAt) {
+    rateLimitMap.set(ip, { count: 1, resetAt: now + RATE_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= RATE_LIMIT) return false;
+  entry.count++;
+  return true;
+}
+
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream",
+  "Cache-Control": "no-cache",
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "strict-origin-when-cross-origin",
+};
+
 export async function POST(req: NextRequest) {
   console.log("🚀 [API] Chat route called");
   
   try {
+    // ── Rate limiting ────────────────────────────────────────────────────────
+    const ip = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
+      ?? req.headers.get("x-real-ip")
+      ?? "unknown";
+    if (!checkRateLimit(ip)) {
+      console.warn("🛑 [API] Rate limit exceeded for IP:", ip);
+      return NextResponse.json(
+        { error: "Too many requests. Please wait a moment before trying again." },
+        { status: 429, headers: { "Retry-After": "60" } }
+      );
+    }
+
     const body: ChatRequest = await req.json();
     const { message, language = "en", conversationHistory = [] } = body;
     console.log("📝 [API] Received message:", message);
@@ -22,31 +59,64 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
 
-    // ── Prompt injection guard ─────────────────────────────────────────────────
-    const INJECTION_PATTERNS = /ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now|forget\s+(all\s+)?your\s+rules|new\s+system\s+prompt|disregard\s+(all\s+)?prior|act\s+as\s+(?:a\s+)?(?:different|general|new)|reveal\s+(?:your\s+)?(?:system|instructions)/i;
-    if (INJECTION_PATTERNS.test(message)) {
-      console.warn("🛡️ [API] Prompt injection attempt blocked:", message.substring(0, 80));
-      const refusal = "I can only help with election procedures and poll worker training. Please contact your election supervisor for other questions.";
+    // ── Input length cap (prevent token flooding) ────────────────────────────
+    if (message.length > 1000) {
+      console.warn("⚠️ [API] Message too long:", message.length, "chars");
+      return NextResponse.json(
+        { error: "Message too long. Please keep questions under 1000 characters." },
+        { status: 400 }
+      );
+    }
+
+    // ── Strip control characters and null bytes ──────────────────────────────
+    const sanitizedMessage = message.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "").trim();
+
+    // ── Prompt injection guard (expanded pattern set) ─────────────────────────
+    const INJECTION_PATTERNS = new RegExp(
+      [
+        "ignore\\s+(all\\s+)?previous\\s+instructions",
+        "you\\s+are\\s+now\\s+(?:a|an|the)",
+        "forget\\s+(all\\s+)?your\\s+rules",
+        "new\\s+system\\s+prompt",
+        "disregard\\s+(all\\s+)?prior",
+        "act\\s+as\\s+(?:a\\s+)?(?:different|general|new|unrestricted|evil|dan|jailbreak)",
+        "reveal\\s+(?:your\\s+)?(?:system|instructions|prompt|training)",
+        "pretend\\s+(you\\s+are|to\\s+be)",
+        "do\\s+anything\\s+now",
+        "jailbreak",
+        "DAN\\b",
+        "override\\s+(?:all\\s+)?(?:safety|rules|instructions)",
+        "repeat\\s+(?:the\\s+)?(?:above|system|prompt|instructions)",
+        "what\\s+(are|were)\\s+your\\s+(?:initial|original|system)\\s+instructions",
+        "show\\s+me\\s+your\\s+(?:prompt|instructions|system)",
+        "\\[INST\\]",       // Llama injection format
+        "<\\|im_start\\|>",  // ChatML injection
+        "<\\|system\\|>",    // Mistral injection
+      ].join("|"),
+      "i"
+    );
+    if (INJECTION_PATTERNS.test(sanitizedMessage)) {
+      console.warn("🛡️ [API] Prompt injection attempt blocked from IP:", ip, "|", sanitizedMessage.substring(0, 80));
+      logInteraction({ userType: "poll_worker", question: sanitizedMessage, response: "[BLOCKED: prompt injection]", sourceDoc: "N/A", language, cached: false });
+      const refusal = "I can only help with election day procedures and poll worker training. For other questions, please contact your election supervisor.";
       const encoder = new TextEncoder();
       const stream = new ReadableStream({
         start(controller) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: refusal })}\n\n`));
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources: [] })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sourceMeta: [] })}\n\n`));
           controller.close();
         },
       });
-      return new Response(stream, {
-        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-      });
+      return new Response(stream, { headers: SSE_HEADERS });
     }
 
     // Check cache first — return as a single JSON chunk with cached flag
-    const cached = getCachedResponse(message);
+    const cached = getCachedResponse(sanitizedMessage);
     if (cached) {
       console.log("✅ [API] Cache hit! Returning cached response");
       logInteraction({
         userType: "poll_worker",
-        question: message,
+        question: sanitizedMessage,
         response: cached.response,
         sourceDoc: cached.source,
         language,
@@ -64,19 +134,17 @@ export async function POST(req: NextRequest) {
           controller.close();
         },
       });
-      return new Response(stream, {
-        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-      });
+      return new Response(stream, { headers: SSE_HEADERS });
     }
 
     // Check for navigation intent
-    const navIntent = detectNavigationIntent(message);
+    const navIntent = detectNavigationIntent(sanitizedMessage);
     if (navIntent) {
       console.log("🧭 [API] Navigation intent detected:", navIntent.path);
     }
 
     // Get RAG context from knowledge base
-    const { context: ragContext, sourceMeta } = await getRAGContext(message);
+    const { context: ragContext, sourceMeta } = await getRAGContext(sanitizedMessage);
     console.log("📚 [API] RAG context length:", ragContext.length);
 
     // ── DEBUG: Log each retrieved chunk so we can verify what the LLM sees ──
@@ -88,7 +156,7 @@ export async function POST(req: NextRequest) {
       });
       console.log("📋 [RAG] ═══ END CHUNKS ═══\n");
     } else {
-      console.warn("⚠️ [RAG] No chunks retrieved for query:", message);
+      console.warn("⚠️ [RAG] No chunks retrieved for query:", sanitizedMessage);
     }
 
     const systemPrompt = buildRAGSystemPrompt(language, ragContext, true);
@@ -98,8 +166,8 @@ export async function POST(req: NextRequest) {
     console.log("🧠 [PROMPT] ═══ END ═══\n");
     const chatMessages = [
       { role: "system" as const, content: systemPrompt },
-      ...conversationHistory.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
-      { role: "user" as const, content: message },
+      ...conversationHistory.slice(-6).map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
+      { role: "user" as const, content: sanitizedMessage },
     ];
 
     // ── Ollama primary (local 8B model for election data privacy) ─────────────
@@ -130,8 +198,8 @@ export async function POST(req: NextRequest) {
               const sourceMatch = fullContent.match(/📄 Source:\s*(.+)$/m);
               const source = sourceMatch?.[1]?.trim() ?? "";
               const finalSourceMeta = sourceMatch ? sourceMeta : [];
-              setCachedResponse(message, fullContent, source, finalSourceMeta);
-              logInteraction({ userType: "poll_worker", question: message, response: fullContent, sourceDoc: source || "N/A", language, cached: false });
+              setCachedResponse(sanitizedMessage, fullContent, source, finalSourceMeta);
+              logInteraction({ userType: "poll_worker", question: sanitizedMessage, response: fullContent, sourceDoc: source || "N/A", language, cached: false });
               controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta: finalSourceMeta, usedSidecar: true })}\n\n`));
               controller.close();
             } catch (err) {
@@ -140,9 +208,7 @@ export async function POST(req: NextRequest) {
           },
         });
 
-        return new Response(stream, {
-          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-        });
+        return new Response(stream, { headers: SSE_HEADERS });
       }
       console.warn("⚠️ [API] Ollama stream returned null — falling back to Groq");
     }
@@ -172,8 +238,8 @@ export async function POST(req: NextRequest) {
           const sourceMatch = fullContent.match(/📄 Source:\s*(.+)$/m);
           const source = sourceMatch?.[1]?.trim() ?? "";
           const finalSourceMeta = sourceMatch ? sourceMeta : [];
-          setCachedResponse(message, fullContent, source, finalSourceMeta);
-          logInteraction({ userType: "poll_worker", question: message, response: fullContent, sourceDoc: source || "N/A", language, cached: false });
+          setCachedResponse(sanitizedMessage, fullContent, source, finalSourceMeta);
+          logInteraction({ userType: "poll_worker", question: sanitizedMessage, response: fullContent, sourceDoc: source || "N/A", language, cached: false });
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta: finalSourceMeta, usedSidecar: false })}\n\n`));
           controller.close();
         } catch (err) {
@@ -182,9 +248,7 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    return new Response(stream, {
-      headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
-    });
+    return new Response(stream, { headers: SSE_HEADERS });
   } catch (error) {
     console.error("❌ [API] Fatal error in chat route:", error);
     return NextResponse.json(

@@ -12,7 +12,7 @@ interface CachedEntry {
 }
 
 const cache = new Map<string, CachedEntry>();
-const CACHE_VERSION = 13;  // bumped: natural guardrail responses + hide source for out-of-scope + passages-first prompt + top_k=10
+const CACHE_VERSION = 15;  // bumped: fixed sidecar penalty bug (election night sections were penalized, causing wrong transport box answers)
 
 /** Normalize a question for consistent cache keys */
 function normalizeKey(question: string): string {

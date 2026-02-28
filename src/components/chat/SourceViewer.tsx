@@ -212,6 +212,9 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
           file={pdfPath}
           onLoadSuccess={({ numPages: n }) => { setNumPages(n); }}
           onLoadError={(e) => console.error("PDF load error:", e)}
+          onItemClick={({ pageNumber }) => {
+            if (pageNumber && pageNumber >= 1) setCurrentPage(pageNumber);
+          }}
           loading={
             <div className="flex flex-col items-center justify-center h-64 gap-4">
               <FilePdf className="h-12 w-12 text-slate-300 animate-pulse" weight="duotone" />
@@ -227,7 +230,7 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
               pageNumber={currentPage}
               width={pdfWidth}
               renderTextLayer={true}
-              renderAnnotationLayer={true}
+              renderAnnotationLayer={false}
               onRenderSuccess={() => {
                 if (currentPage === targetPage) {
                   setTimeout(() => highlightPageText(active.chunkContent), 200);
