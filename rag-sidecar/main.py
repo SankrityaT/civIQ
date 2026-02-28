@@ -436,27 +436,30 @@ def parse_pdf(pdf_path: Path) -> List[dict]:
 
 _TIME_RE = re.compile(r'\b(\d{1,2}:\d{2}\s*(?:a\.m\.|p\.m\.|AM|PM|a\.m|p\.m))\.?', re.IGNORECASE)
 _DATE_RE = re.compile(r'\b((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})', re.IGNORECASE)
-_DEADLINE_KW = re.compile(r'\b(arrive|open|close|closed|deadline|by|until|from|at)\b', re.IGNORECASE)
+_BOX_RE  = re.compile(r'(?:Packed and sealed\s+)?(RED|BLUE|GREEN|GRAY|WHITE|YELLOW)\s+Transport\s+Box(?:\(es\))?[:\s]+([^\n.]{5,120})', re.IGNORECASE)
 
 def generate_chunk_context(chunk_text: str, section_title: str, doc_name: str) -> str:
     """
-    Build contextual content with regex-extracted time/date facts prepended.
-    This ensures BM25 can match '6:00 a.m.' queries to the right chunk without
-    any LLM paraphrasing (which caused hallucination of wrong times).
+    Build contextual content with regex-extracted facts prepended.
+    Ensures BM25 can match specific queries (times, transport box contents, etc.)
+    without LLM paraphrasing.
     """
     times = _TIME_RE.findall(chunk_text)
     dates = _DATE_RE.findall(chunk_text)
+    box_matches = _BOX_RE.findall(chunk_text)
     facts = []
     if times:
         facts.append("Times mentioned: " + ", ".join(dict.fromkeys(times)))
     if dates:
         facts.append("Dates mentioned: " + ", ".join(dict.fromkeys(dates)))
+    for color, contents in box_matches:
+        facts.append(f"{color.upper()} Transport Box contains: {contents.strip()}")
     fact_prefix = (" | ".join(facts) + " | ") if facts else ""
     return f"[{section_title}] {fact_prefix}{chunk_text}"
 
 # ─── Disk Cache ───────────────────────────────────────────────────────────────
 
-CACHE_VERSION = "pplx-v1-280w"  # change when model or chunking params change
+CACHE_VERSION = "pplx-v1-280w-ctx2"  # bumped: added transport box fact extraction to contextual content
 
 def cache_path(doc_hash: str) -> Path:
     return CACHE_DIR / f"{doc_hash}_{CACHE_VERSION}.json"
@@ -852,14 +855,20 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
         
         rescued: List[dict] = []
         rescued_ids: set = set()
-        
-        for c in chunks:
-            if c["id"] in already or c["id"] in rescued_ids:
+
+        # Sort candidates by fused score (best first) so highest-relevance chunks win slots
+        candidates_sorted = sorted(
+            [c for c in chunks if c["id"] not in already],
+            key=lambda c: -fused_scores.get(c["id"], 0.0),
+        )
+
+        for c in candidates_sorted:
+            if c["id"] in rescued_ids:
                 continue
             raw_lower = c["raw_content"].lower()
             ctx_lower = c.get("contextual_content", "").lower()
             combined = raw_lower + " " + ctx_lower
-            
+
             # Check for specific terms first (high value)
             for term in specific_terms:
                 if term.lower() in combined:
@@ -872,7 +881,7 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
                 if matches >= max(2, len(words) // 2):
                     rescued.append(c)
                     rescued_ids.add(c["id"])
-            
+
             if len(rescued) >= k:
                 break
         
@@ -897,11 +906,12 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
             "document_name": c["doc_name"],
         })
         result_ids.add(cid)
-        if len(results) >= top_k - 3:   # reserve 3 slots for keyword rescue
+        if len(results) >= top_k - 5:   # reserve 5 slots for keyword rescue
             break
 
     # Second: keyword rescue pass — inject chunks with exact query terms
-    rescued = _keyword_rescue(query, fused, result_ids, k=3)
+    # Sorted by fused score so best-matching chunk wins a rescue slot (not just earliest in doc)
+    rescued = _keyword_rescue(query, fused, result_ids, k=5)
     for c in rescued:
         results.append({
             "chunk_id":      c["id"],

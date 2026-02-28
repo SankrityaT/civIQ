@@ -12,7 +12,7 @@ interface CachedEntry {
 }
 
 const cache = new Map<string, CachedEntry>();
-const CACHE_VERSION = 11;  // bumped: hardened system prompt for exact-fact extraction
+const CACHE_VERSION = 13;  // bumped: natural guardrail responses + hide source for out-of-scope + passages-first prompt + top_k=10
 
 /** Normalize a question for consistent cache keys */
 function normalizeKey(question: string): string {

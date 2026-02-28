@@ -642,6 +642,28 @@ export default function ChatWindow() {
   const [suggestions, setSuggestions] = useState<{ q: string; qEs: string; icon: React.ElementType; category: string; categoryEs: string }[]>([]);
   const [suggestionsLoading, setSuggestionsLoading] = useState(true);
 
+  // Load TTS voices on mount (required for voice selection)
+  useEffect(() => {
+    if (window.speechSynthesis) {
+      // Load voices immediately
+      window.speechSynthesis.getVoices();
+      
+      // Some browsers load voices asynchronously
+      const loadVoices = () => {
+        const voices = window.speechSynthesis.getVoices();
+        if (voices.length > 0) {
+          console.log(`TTS: ${voices.length} voices loaded`);
+        }
+      };
+      
+      if (window.speechSynthesis.onvoiceschanged !== undefined) {
+        window.speechSynthesis.onvoiceschanged = loadVoices;
+      }
+      
+      loadVoices();
+    }
+  }, []);
+
   // Fetch dynamic suggestions from API
   useEffect(() => {
     const fetchSuggestions = async () => {
@@ -706,14 +728,43 @@ export default function ChatWindow() {
   }, [language]);
 
   const speak = useCallback((text: string) => {
-    if (!window.speechSynthesis) return;
+    if (!window.speechSynthesis) {
+      console.warn("TTS not supported in this browser");
+      return;
+    }
+    
     window.speechSynthesis.cancel();
-    const clean = text.replace(/ Source:[\s\S]*/, "").trim();
+    const clean = text.replace(/📄 Source:[\s\S]*/, "").trim();
+    
+    if (!clean) {
+      console.warn("No text to speak");
+      return;
+    }
+    
     const utt = new SpeechSynthesisUtterance(clean);
     utt.lang = language === "es" ? "es-ES" : "en-US";
     utt.rate = 0.95;
+    utt.pitch = 1.0;
+    utt.volume = 1.0;
+    
+    // Get available voices and select appropriate one
+    const voices = window.speechSynthesis.getVoices();
+    if (voices.length > 0) {
+      const preferredVoice = voices.find(v => 
+        v.lang.startsWith(language === "es" ? "es" : "en")
+      );
+      if (preferredVoice) {
+        utt.voice = preferredVoice;
+      }
+    }
+    
     utt.onstart = () => setIsSpeaking(true);
     utt.onend = () => setIsSpeaking(false);
+    utt.onerror = (e) => {
+      console.error("TTS error:", e);
+      setIsSpeaking(false);
+    };
+    
     window.speechSynthesis.speak(utt);
   }, [language]);
 
@@ -728,24 +779,57 @@ export default function ChatWindow() {
       setIsListening(false);
       return;
     }
-    type AnySR = { new(): { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void) | null; onend: (() => void) | null } };
+    
+    type AnySR = { new(): { lang: string; continuous: boolean; interimResults: boolean; start: () => void; stop: () => void; onresult: ((e: { results: { [k: number]: { [k: number]: { transcript: string } } } }) => void) | null; onend: (() => void) | null; onerror: ((e: { error: string }) => void) | null } };
     const w = window as unknown as { SpeechRecognition?: AnySR; webkitSpeechRecognition?: AnySR };
     const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
-    if (!SR) return;
-    const rec = new SR();
-    rec.lang = language === "es" ? "es-ES" : "en-US";
-    rec.continuous = false;
-    rec.interimResults = true;
-    rec.onresult = (e) => {
-      const transcript = Array.from({ length: Object.keys(e.results).length })
-        .map((_, i) => e.results[i][0].transcript)
-        .join("");
-      setInput(transcript);
-    };
-    rec.onend = () => setIsListening(false);
-    rec.start();
-    recognitionRef.current = rec;
-    setIsListening(true);
+    
+    if (!SR) {
+      console.warn("STT not supported in this browser");
+      alert("Speech recognition is not supported in your browser. Please use Chrome, Edge, or Safari.");
+      return;
+    }
+    
+    try {
+      const rec = new SR();
+      rec.lang = language === "es" ? "es-ES" : "en-US";
+      rec.continuous = false;
+      rec.interimResults = true;
+      
+      rec.onresult = (e) => {
+        const transcript = Array.from({ length: Object.keys(e.results).length })
+          .map((_, i) => e.results[i][0].transcript)
+          .join("");
+        setInput(transcript);
+        console.log("STT transcript:", transcript);
+      };
+      
+      rec.onend = () => {
+        console.log("STT ended");
+        setIsListening(false);
+      };
+      
+      rec.onerror = (e) => {
+        console.error("STT error:", e.error);
+        setIsListening(false);
+        
+        if (e.error === "not-allowed") {
+          alert("Microphone access denied. Please allow microphone access in your browser settings.");
+        } else if (e.error === "no-speech") {
+          console.log("No speech detected");
+        } else {
+          console.error("Speech recognition error:", e.error);
+        }
+      };
+      
+      rec.start();
+      recognitionRef.current = rec;
+      setIsListening(true);
+      console.log("STT started, language:", rec.lang);
+    } catch (err) {
+      console.error("Failed to start speech recognition:", err);
+      setIsListening(false);
+    }
   }, [isListening, language]);
 
   const sendMessage = useCallback(
@@ -1087,14 +1171,7 @@ export default function ChatWindow() {
               <div className="flex items-center gap-2">
                 <div className="flex gap-2.5">
                   <button
-                    onClick={() => {
-                      if (isListening) {
-                        setIsListening(false);
-                        recognitionRef.current?.stop();
-                      } else {
-                        setIsListening(true);
-                      }
-                    }}
+                    onClick={toggleListening}
                     className={`rounded-xl p-2.5 transition-all shadow-sm ${
                       isListening
                         ? "bg-gradient-to-br from-red-500 to-red-600 text-white hover:shadow-md hover:scale-105 animate-pulse"

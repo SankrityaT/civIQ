@@ -128,10 +128,11 @@ export async function POST(req: NextRequest) {
                 }
               }
               const sourceMatch = fullContent.match(/📄 Source:\s*(.+)$/m);
-              const source = sourceMatch?.[1]?.trim() ?? "Poll Worker Training Manual 2026";
-              setCachedResponse(message, fullContent, source, sourceMeta);
-              logInteraction({ userType: "poll_worker", question: message, response: fullContent, sourceDoc: source, language, cached: false });
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta, usedSidecar: true })}\n\n`));
+              const source = sourceMatch?.[1]?.trim() ?? "";
+              const finalSourceMeta = sourceMatch ? sourceMeta : [];
+              setCachedResponse(message, fullContent, source, finalSourceMeta);
+              logInteraction({ userType: "poll_worker", question: message, response: fullContent, sourceDoc: source || "N/A", language, cached: false });
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta: finalSourceMeta, usedSidecar: true })}\n\n`));
               controller.close();
             } catch (err) {
               controller.error(err);
@@ -169,10 +170,11 @@ export async function POST(req: NextRequest) {
             }
           }
           const sourceMatch = fullContent.match(/📄 Source:\s*(.+)$/m);
-          const source = sourceMatch?.[1]?.trim() ?? "Poll Worker Training Manual 2026";
-          setCachedResponse(message, fullContent, source, sourceMeta);
-          logInteraction({ userType: "poll_worker", question: message, response: fullContent, sourceDoc: source, language, cached: false });
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta, usedSidecar: false })}\n\n`));
+          const source = sourceMatch?.[1]?.trim() ?? "";
+          const finalSourceMeta = sourceMatch ? sourceMeta : [];
+          setCachedResponse(message, fullContent, source, finalSourceMeta);
+          logInteraction({ userType: "poll_worker", question: message, response: fullContent, sourceDoc: source || "N/A", language, cached: false });
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta: finalSourceMeta, usedSidecar: false })}\n\n`));
           controller.close();
         } catch (err) {
           controller.error(err);
