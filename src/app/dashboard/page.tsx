@@ -157,8 +157,8 @@ export default function DashboardPage() {
       setAuditStats(d.stats ?? { totalToday: 0, cachedCount: 0, totalAll: 0, spanishCount: 0, flaggedCount: 0 });
       setRecentEntries((d.entries as AuditEntry[])?.slice(0, 6) ?? []);
     }).catch(() => {});
-    fetch("/api/recruit", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ filters: {} }) })
-      .then(r => r.json()).then(d => setRecruitCount(d.totalMatched ?? 0)).catch(() => {});
+    fetch("/api/recruit")
+      .then(r => r.json()).then(d => setRecruitCount(d.totalScored ?? 0)).catch(() => {});
   }, []);
 
   // Simulated recruitment funnel data

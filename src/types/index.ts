@@ -57,28 +57,75 @@ export interface TrainingManual {
 // ─── Recruitment ─────────────────────────────────────────────────────────────
 
 export interface RecruitFilters {
-  ageRange?: [number, number];
-  location?: string;
+  city?: string;
+  precinct?: string;
   languages?: string[];
-  maxDistance?: number;
+  minAge?: number;
+  maxAge?: number;
+  minScore?: number;
+  experiencedOnly?: boolean;
+  bilingualOnly?: boolean;
+  page?: number;
+  pageSize?: number;
+  sortBy?: string;
+  sortDir?: "asc" | "desc";
 }
 
 export interface Candidate {
   id: string;
+  firstName: string;
+  lastName: string;
   name: string;
   age: number;
-  location: string;
+  address: string;
+  city: string;
   precinct: string;
+  zip: string;
   languages: string[];
   registeredSince: string;
-  aiScore: number;     // 0–100 match score
-  aiReason: string;    // Why AI flagged this candidate
+  party: string;
+  email: string;
+  phone: string;
+  previousPollWorker: boolean;
+  availability: string;
+  aiScore: number;        // 0–100 match score
+  aiReason: string;       // Why AI flagged this candidate
+  aiEnriched: boolean;    // true if Ollama refined this candidate
 }
 
 export interface RecruitResponse {
   candidates: Candidate[];
-  totalScanned: number;
-  totalMatched: number;
+  totalScored: number;
+  totalFiltered: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  scoring: boolean;
+  noData?: boolean;
+}
+
+export interface VoterStats {
+  loaded: boolean;
+  scoring: boolean;
+  totalRecords: number;
+  totalScored: number;
+  aiEnrichedCount: number;
+  bilingualCount: number;
+  experiencedCount: number;
+  avgScore: number;
+  cities: string[];
+  cityCounts: Record<string, number>;
+  precincts: string[];
+  precinctCounts: Record<string, number>;
+  languages: string[];
+}
+
+export interface UploadResponse {
+  status: string;
+  totalRecords: number;
+  message: string;
+  scoring: boolean;
+  error?: string;
 }
 
 // ─── Audit Log ───────────────────────────────────────────────────────────────

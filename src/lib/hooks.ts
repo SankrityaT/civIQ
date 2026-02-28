@@ -3,7 +3,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
-import { TrainingDocument, AuditEntry, Candidate, Language, UserType } from "@/types";
+import { TrainingDocument, AuditEntry, Candidate, RecruitFilters, UploadResponse, VoterStats, Language, UserType } from "@/types";
 
 // ─── Documents ──────────────────────────────────────────────────────────────
 
@@ -118,16 +118,14 @@ export function useAuditLog(filters?: AuditFilters) {
 
 // ─── Recruitment ─────────────────────────────────────────────────────────────
 
-interface RecruitFiltersInput {
-  ageRange?: [number, number];
-  location?: string;
-  languages?: string[];
-}
-
-export function useRecruitCandidates(filters?: RecruitFiltersInput) {
+export function useRecruitCandidates(filters?: RecruitFilters) {
   const [candidates, setCandidates] = useState<Candidate[]>([]);
-  const [totalScanned, setTotalScanned] = useState(0);
-  const [totalMatched, setTotalMatched] = useState(0);
+  const [totalScored, setTotalScored] = useState(0);
+  const [totalFiltered, setTotalFiltered] = useState(0);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [scoring, setScoring] = useState(false);
+  const [noData, setNoData] = useState(false);
   const [loading, setLoading] = useState(true);
 
   const refresh = useCallback(async () => {
@@ -136,12 +134,16 @@ export function useRecruitCandidates(filters?: RecruitFiltersInput) {
       const res = await fetch("/api/recruit", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ filters: filters ?? {} }),
+        body: JSON.stringify(filters ?? {}),
       });
       const data = await res.json();
       setCandidates(data.candidates ?? []);
-      setTotalScanned(data.totalScanned ?? 0);
-      setTotalMatched(data.totalMatched ?? 0);
+      setTotalScored(data.totalScored ?? 0);
+      setTotalFiltered(data.totalFiltered ?? 0);
+      setPage(data.page ?? 1);
+      setTotalPages(data.totalPages ?? 0);
+      setScoring(data.scoring ?? false);
+      setNoData(data.noData ?? false);
     } catch {
       console.error("Failed to fetch candidates");
     } finally {
@@ -154,5 +156,68 @@ export function useRecruitCandidates(filters?: RecruitFiltersInput) {
     refresh();
   }, [refresh]);
 
-  return { candidates, totalScanned, totalMatched, loading, refresh };
+  return { candidates, totalScored, totalFiltered, page, totalPages, scoring, noData, loading, refresh };
+}
+
+// ─── Voter Upload ───────────────────────────────────────────────────────────
+
+export function useVoterUpload() {
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [result, setResult] = useState<UploadResponse | null>(null);
+
+  const upload = useCallback(async (file: File) => {
+    setUploading(true);
+    setError(null);
+    setResult(null);
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/recruit/upload", {
+        method: "POST",
+        body: form,
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? "Upload failed");
+        return null;
+      }
+      setResult(data);
+      return data as UploadResponse;
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Upload failed";
+      setError(msg);
+      return null;
+    } finally {
+      setUploading(false);
+    }
+  }, []);
+
+  return { upload, uploading, error, result };
+}
+
+// ─── Voter Stats ────────────────────────────────────────────────────────────
+
+export function useVoterStats() {
+  const [stats, setStats] = useState<VoterStats | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const refresh = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/recruit");
+      const data = await res.json();
+      setStats(data as VoterStats);
+    } catch {
+      console.error("Failed to fetch voter stats");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  return { stats, loading, refresh };
 }
