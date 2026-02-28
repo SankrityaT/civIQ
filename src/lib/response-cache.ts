@@ -12,7 +12,7 @@ interface CachedEntry {
 }
 
 const cache = new Map<string, CachedEntry>();
-const CACHE_VERSION = 6;
+const CACHE_VERSION = 7;
 
 /** Normalize a question for consistent cache keys */
 function normalizeKey(question: string): string {

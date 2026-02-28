@@ -62,6 +62,7 @@ export default function DocumentUpload() {
   const [dragOver, setDragOver] = useState(false);
   const [meta, setMeta] = useState<ExtractedMeta | null>(null);
   const [graphStats, setGraphStats] = useState({ nodes: 0, edges: 0, concepts: 0 });
+  const [sidecarStatus, setSidecarStatus] = useState<"ok" | "warn" | "offline">("ok");
   const fileRef = useRef<HTMLInputElement>(null);
 
   function reset() {
@@ -102,42 +103,46 @@ export default function DocumentUpload() {
     if (!file) return;
 
     try {
-      // Phase 1: Uploading
+      // Phase 1: Uploading — send to sidecar docs + TS parse in parallel
       setPhase("uploading");
-      await delay(500);
 
-      // Phase 2: Extracting — REAL PDF parsing
-      setPhase("extracting");
       const formData = new FormData();
       formData.append("file", file);
 
-      const parseRes = await fetch("/api/parse-pdf", {
-        method: "POST",
-        body: formData,
-      });
+      // Run PDF parse and sidecar upload in parallel
+      const [parseRes, sidecarRes] = await Promise.all([
+        fetch("/api/parse-pdf", { method: "POST", body: formData }),
+        fetch("/api/upload-to-sidecar", { method: "POST", body: formData }),
+      ]);
 
       if (!parseRes.ok) {
         const err = await parseRes.json();
         throw new Error(err.error || "Failed to parse PDF");
       }
 
+      // Phase 2: Extracting
+      setPhase("extracting");
       const parseData = await parseRes.json();
       const { sections, totalPages } = parseData;
       const totalWords = sections.reduce((sum: number, s: { wordCount: number }) => sum + s.wordCount, 0);
-
-      // Extract topics from section titles
       const topics = sections.slice(0, 5).map((s: { title: string }) => s.title);
-
       setMeta({ pages: totalPages, sections: sections.length, words: totalWords, topics });
-      await delay(800);
 
-      // Phase 3: Chunking
+      const sidecarData = sidecarRes.ok ? await sidecarRes.json() : null;
+      if (!sidecarRes.ok) {
+        setSidecarStatus("offline");
+      } else if (sidecarData?.sidecarTriggered) {
+        setSidecarStatus("ok");
+        console.log("🐍 Sidecar ingestion started in background");
+      } else {
+        setSidecarStatus("warn"); // PDF saved but sidecar offline or not triggered
+      }
+
+      await delay(600);
+
+      // Phase 3: Chunking — ingest into TS KB simultaneously
       setPhase("chunking");
-      await delay(1000);
-
-      // Phase 4: Embedding — call the real ingestion API
-      setPhase("embedding");
-      const ingestRes = await fetch("/api/documents", {
+      const tsIngestRes = await fetch("/api/documents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -151,27 +156,43 @@ export default function DocumentUpload() {
         }),
       });
 
-      if (!ingestRes.ok) {
-        throw new Error("Failed to ingest document");
+      if (!tsIngestRes.ok) {
+        throw new Error("Failed to ingest into knowledge base");
       }
+      await delay(600);
 
-      await delay(1200);
+      // Phase 4: Embedding
+      setPhase("embedding");
+      await delay(800);
 
-      // Phase 5: Knowledge Graph — animate stats growing
+      // Phase 5: Knowledge Graph — fetch real graph stats from sidecar
       setPhase("graphing");
-      const targetNodes = sections.length * 3 + topics.length;
-      const targetEdges = targetNodes * 2;
-      const targetConcepts = topics.length + 5;
+      let realNodes = sections.length * 3 + topics.length;
+      let realEdges = realNodes * 2;
+      let realConcepts = topics.length + 5;
+
+      try {
+        const graphRes = await fetch("/api/knowledge-graph");
+        if (graphRes.ok) {
+          const graphData = await graphRes.json();
+          if (graphData.meta?.totalNodes > 0) {
+            realNodes = graphData.meta.totalNodes;
+            realEdges = graphData.meta.totalEdges;
+            realConcepts = graphData.nodes?.filter((n: { type: string }) => n.type === "concept").length ?? realConcepts;
+          }
+        }
+      } catch { /* use estimated values */ }
+
       const steps = 12;
       for (let i = 1; i <= steps; i++) {
-        await delay(120);
+        await delay(100);
         setGraphStats({
-          nodes: Math.round((targetNodes * i) / steps),
-          edges: Math.round((targetEdges * i) / steps),
-          concepts: Math.round((targetConcepts * i) / steps),
+          nodes: Math.round((realNodes * i) / steps),
+          edges: Math.round((realEdges * i) / steps),
+          concepts: Math.round((realConcepts * i) / steps),
         });
       }
-      await delay(400);
+      await delay(300);
 
       setPhase("done");
     } catch (error) {
@@ -399,6 +420,22 @@ export default function DocumentUpload() {
                     <p className="text-sm font-bold text-amber-600">{meta.words.toLocaleString()}</p>
                     <p className="text-[10px] text-slate-400">Words</p>
                   </div>
+                </div>
+              </div>
+            )}
+
+            {sidecarStatus !== "ok" && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-start gap-2.5">
+                <Lightning size={16} weight="fill" className="text-amber-500 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="text-xs font-semibold text-amber-800">
+                    {sidecarStatus === "offline" ? "RAG Sidecar Offline" : "Sidecar Groq Key Invalid"}
+                  </p>
+                  <p className="text-[11px] text-amber-700 mt-0.5">
+                    {sidecarStatus === "offline"
+                      ? "PDF saved to disk. Run the sidecar to index it for AI search."
+                      : "PDF saved but context generation failed. Update GROQ_API_KEY in .env.local and restart the sidecar."}
+                  </p>
                 </div>
               </div>
             )}

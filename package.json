@@ -4,6 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "dev:all": "concurrently \"npm:ollama\" \"npm:sidecar\" \"next dev\" --names=ollama,sidecar,next --prefix-colors=magenta,yellow,cyan",
+    "ollama": "ollama serve",
+    "sidecar": "export $(grep -v '^#' .env.local | xargs) 2>/dev/null; rag-sidecar/.venv/bin/python rag-sidecar/main.py",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
@@ -29,7 +32,9 @@
     "pdfjs-dist": "^5.4.624",
     "react": "19.2.3",
     "react-dom": "19.2.3",
+    "react-markdown": "^10.1.0",
     "react-pdf": "^10.4.1",
+    "remark-gfm": "^4.0.1",
     "tailwind-merge": "^3.5.0",
     "unpdf": "^1.4.0"
   },
@@ -39,6 +44,7 @@
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "babel-plugin-react-compiler": "1.0.0",
+    "concurrently": "^9.0.0",
     "eslint": "^9",
     "eslint-config-next": "16.1.6",
     "tailwindcss": "^4",

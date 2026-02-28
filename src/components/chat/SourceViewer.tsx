@@ -33,7 +33,15 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
   const containerRef = useRef<HTMLDivElement>(null);
   const pageRef = useRef<HTMLDivElement>(null);
 
-  const pdfPath = "/poll_worker_training_manual.pdf";
+  // Map document name → served PDF path
+  // doc_name from sidecar = filename stem title-cased, e.g. "Finaltestmanual" or "Poll Worker Training Manual"
+  const getPdfPath = (meta: typeof active): string => {
+    const name = (meta?.documentName ?? meta?.documentId ?? "").toLowerCase().replace(/\s+/g, "");
+    if (name.includes("finaltest")) return "/finaltestmanual.pdf";
+    if (name.includes("pollworker") || name.includes("poll_worker")) return "/poll_worker_training_manual.pdf";
+    return "/poll_worker_training_manual.pdf";
+  };
+  const pdfPath = getPdfPath(active);
   const targetPage = active?.pageNumber ?? 1;
 
   // Measure container width for responsive PDF scaling
@@ -60,6 +68,7 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
     const textLayer = pageRef.current.querySelector(".react-pdf__Page__textContent") as HTMLElement | null;
     if (!textLayer) return;
 
+    // Clear previous highlights
     textLayer.querySelectorAll("mark.pdf-highlight").forEach((m) => {
       const parent = m.parentNode;
       if (parent) {
@@ -68,22 +77,73 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
       }
     });
 
+    // Extract key phrases to search for (skip generic words, focus on specifics)
+    const cleanSnippet = snippet.replace(/\[.*?\]/g, "").trim(); // remove [Section X] prefixes
+    const words = cleanSnippet.split(/\s+/).filter(w => w.length > 3 && !/^(the|and|for|with|you|will|must|can|this|that|from|have|are|was|were|been|being|they|them|their|there|then|than|when|where|what|which|while|who|whom|whose|why|how|all|any|both|each|few|more|most|other|some|such|only|own|same|so|than|too|very|just|but|not|also|after|before|during|into|through|above|below|between|under|again|further|once|here|there|why|how|out|off|over|under|again|further|once)$/i.test(w));
+    
+    // Pick 3-4 distinctive phrases (8-15 chars each) to search for
+    const phrases: string[] = [];
+    for (let i = 0; i < words.length - 2 && phrases.length < 4; i++) {
+      const phrase = words.slice(i, i + 3).join(" ");
+      if (phrase.length >= 8 && phrase.length <= 25) {
+        phrases.push(phrase.toLowerCase());
+      }
+    }
+    // Fallback: use first sentence if no good phrases found
+    if (phrases.length === 0) {
+      const firstSentence = cleanSnippet.split(/[.!?]/)[0];
+      if (firstSentence.length > 10) {
+        phrases.push(firstSentence.slice(0, 30).toLowerCase());
+      }
+    }
+
+    const fullText = textLayer.textContent?.toLowerCase() ?? "";
+    
+    // Find the phrase with the best match
+    let bestPhrase = "";
+    let bestIdx = -1;
+    for (const phrase of phrases) {
+      const idx = fullText.indexOf(phrase);
+      if (idx > -1 && (bestIdx === -1 || phrase.length > bestPhrase.length)) {
+        bestIdx = idx;
+        bestPhrase = phrase;
+      }
+    }
+
+    if (bestIdx === -1) return;
+
+    // Walk the text layer and find the node containing our match
     const walker = document.createTreeWalker(textLayer, NodeFilter.SHOW_TEXT);
-    const searchStr = snippet.slice(0, 120).toLowerCase();
+    let charCount = 0;
     let node: Text | null;
+    
     while ((node = walker.nextNode() as Text | null)) {
       const text = node.textContent ?? "";
-      const idx = text.toLowerCase().indexOf(searchStr.slice(0, 40));
-      if (idx > -1) {
+      const nodeStart = charCount;
+      const nodeEnd = charCount + text.length;
+      
+      // Check if this node contains our target
+      if (nodeStart <= bestIdx && bestIdx < nodeEnd) {
+        const localIdx = bestIdx - nodeStart;
         const range = document.createRange();
-        range.setStart(node, idx);
-        range.setEnd(node, Math.min(idx + searchStr.length, text.length));
+        range.setStart(node, localIdx);
+        
+        // Try to extend the highlight to cover multiple nodes if needed
+        const highlightLen = Math.min(bestPhrase.length, text.length - localIdx);
+        range.setEnd(node, localIdx + highlightLen);
+        
         const mark = document.createElement("mark");
         mark.className = "pdf-highlight";
-        mark.style.cssText = "background: rgba(251,191,36,0.45); border-radius:3px; padding: 2px 0; box-shadow: 0 0 0 2px rgba(251,191,36,0.25);";
-        try { range.surroundContents(mark); } catch { /* ignore cross-node ranges */ }
+        mark.style.cssText = "background: rgba(251,191,36,0.55); border-radius:3px; padding: 2px 0; box-shadow: 0 0 0 3px rgba(251,191,36,0.35); font-weight:500;";
+        
+        try {
+          range.surroundContents(mark);
+          // Scroll into view
+          mark.scrollIntoView({ behavior: "smooth", block: "center" });
+        } catch { /* ignore cross-node ranges */ }
         break;
       }
+      charCount = nodeEnd;
     }
   }, []);
 

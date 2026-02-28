@@ -2,12 +2,34 @@ import { NextRequest, NextResponse } from "next/server";
 import {
   getDocuments,
   addDocument,
+  upsertSidecarDocument,
   toggleDocumentStatus,
   deleteDocument,
 } from "@/lib/document-store";
 import { getKnowledgeBase } from "@/lib/knowledge-base";
 
+const SIDECAR_URL = process.env.RAG_SIDECAR_URL ?? "http://127.0.0.1:8000";
+
 export async function GET() {
+  // Sync real documents from sidecar chunks
+  try {
+    const res = await fetch(`${SIDECAR_URL}/chunks`, { signal: AbortSignal.timeout(3000) });
+    if (res.ok) {
+      const chunks: Array<{ id: string; doc: string; title: string; page: number }> = await res.json();
+      // Aggregate by doc name
+      const docMap = new Map<string, { sections: Set<string>; pages: Set<number> }>();
+      for (const chunk of chunks) {
+        if (!docMap.has(chunk.doc)) docMap.set(chunk.doc, { sections: new Set(), pages: new Set() });
+        docMap.get(chunk.doc)!.sections.add(chunk.title);
+        docMap.get(chunk.doc)!.pages.add(chunk.page);
+      }
+      for (const [docName, data] of docMap) {
+        upsertSidecarDocument(docName, data.sections.size, data.pages.size);
+      }
+    }
+  } catch {
+    // Sidecar offline — return store as-is
+  }
   return NextResponse.json({ documents: getDocuments() });
 }
 

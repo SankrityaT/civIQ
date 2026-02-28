@@ -37,8 +37,8 @@ const COLORS = {
 const NODE_RADIUS = {
   document: 8,
   section: 5,
-  concept: 6,
-  entity: 4,
+  concept: 4,
+  entity: 3,
 };
 
 interface KnowledgeGraphProps {
@@ -53,123 +53,114 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
   const edgesRef = useRef<GraphEdge[]>([]);
   const frameRef = useRef<number>(0);
   const [dimensions, setDimensions] = useState({ w: 600, h: 400 });
+  const [liveStats, setLiveStats] = useState<{ nodes: number; edges: number; live: boolean } | null>(null);
   const litCountRef = useRef(0);
   const lastSpawnRef = useRef(0);
 
-  const buildGraph = useCallback(() => {
-    const docs = stats?.documents ?? 3;
-    const secs = stats?.sections ?? 16;
-    const concepts = stats?.concepts ?? 21;
-    const totalNodes = docs + secs + concepts + Math.floor(concepts * 0.6);
-    
-    const nodes: GraphNode[] = [];
-    const edges: GraphEdge[] = [];
+  const buildGraphFromData = useCallback((
+    apiNodes: Array<{ id: string; label: string; type: string }>,
+    apiEdges: Array<{ source: string; target: string; weight: number }>,
+  ) => {
     const cx = dimensions.w / 2;
     const cy = dimensions.h / 2;
 
-    // Document nodes — center cluster
-    for (let i = 0; i < docs; i++) {
-      const angle = (i / docs) * Math.PI * 2;
-      const r = 30 + Math.random() * 20;
-      nodes.push({
-        id: `doc-${i}`,
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        vx: 0, vy: 0,
-        radius: NODE_RADIUS.document,
-        color: COLORS.document,
-        alpha: 0, targetAlpha: animate ? 0 : 0.9,
-        type: "document",
-        label: `Doc ${i + 1}`,
-        lit: !animate,
-        litAt: 0,
-      });
+    // Group by type for radial placement
+    const byType: Record<string, typeof apiNodes> = { document: [], section: [], concept: [] };
+    for (const n of apiNodes) {
+      const t = n.type in byType ? n.type : "concept";
+      byType[t].push(n);
     }
 
-    // Section nodes — inner ring
-    for (let i = 0; i < secs; i++) {
-      const angle = (i / secs) * Math.PI * 2 + Math.random() * 0.3;
-      const r = 60 + Math.random() * 50;
-      const parentDoc = `doc-${i % docs}`;
-      nodes.push({
-        id: `sec-${i}`,
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        vx: (Math.random() - 0.5) * 0.3,
-        vy: (Math.random() - 0.5) * 0.3,
-        radius: NODE_RADIUS.section,
-        color: COLORS.section,
-        alpha: 0, targetAlpha: animate ? 0 : 0.8,
-        type: "section",
-        label: `Section ${i + 1}`,
-        lit: !animate,
-        litAt: 0,
-      });
-      edges.push({ from: parentDoc, to: `sec-${i}`, alpha: 0, targetAlpha: animate ? 0 : 0.3 });
-    }
+    const nodes: GraphNode[] = [];
+    const nodePos: Record<string, { x: number; y: number }> = {};
 
-    // Concept nodes — outer ring
-    for (let i = 0; i < concepts; i++) {
-      const angle = (i / concepts) * Math.PI * 2 + Math.random() * 0.5;
-      const r = 100 + Math.random() * 70;
-      nodes.push({
-        id: `concept-${i}`,
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        vx: (Math.random() - 0.5) * 0.4,
-        vy: (Math.random() - 0.5) * 0.4,
-        radius: NODE_RADIUS.concept,
-        color: COLORS.concept,
-        alpha: 0, targetAlpha: animate ? 0 : 0.8,
-        type: "concept",
-        label: `Concept ${i + 1}`,
-        lit: !animate,
-        litAt: 0,
-      });
-      // Connect to 1-2 random sections
-      const secIdx = i % secs;
-      edges.push({ from: `sec-${secIdx}`, to: `concept-${i}`, alpha: 0, targetAlpha: animate ? 0 : 0.25 });
-      if (Math.random() > 0.5) {
-        const secIdx2 = (secIdx + 1 + Math.floor(Math.random() * 3)) % secs;
-        edges.push({ from: `sec-${secIdx2}`, to: `concept-${i}`, alpha: 0, targetAlpha: animate ? 0 : 0.25 });
-      }
-    }
+    // Document — center
+    byType.document.forEach((n, i) => {
+      const angle = (i / Math.max(byType.document.length, 1)) * Math.PI * 2;
+      const r = 20 + Math.random() * 15;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      nodePos[n.id] = { x, y };
+      nodes.push({ id: n.id, x, y, vx: 0, vy: 0, radius: NODE_RADIUS.document, color: COLORS.document, alpha: 0, targetAlpha: animate ? 0 : 0.9, type: "document", label: n.label, lit: !animate, litAt: 0 });
+    });
 
-    // Entity nodes — outermost scattered
-    const entityCount = Math.floor(concepts * 0.6);
-    for (let i = 0; i < entityCount; i++) {
-      const angle = (i / entityCount) * Math.PI * 2 + Math.random() * 0.8;
-      const r = 140 + Math.random() * 50;
-      nodes.push({
-        id: `entity-${i}`,
-        x: cx + Math.cos(angle) * r,
-        y: cy + Math.sin(angle) * r,
-        vx: (Math.random() - 0.5) * 0.5,
-        vy: (Math.random() - 0.5) * 0.5,
-        radius: NODE_RADIUS.entity,
-        color: COLORS.entity,
-        alpha: 0, targetAlpha: animate ? 0 : 0.7,
-        type: "entity",
-        label: `Entity ${i + 1}`,
-        lit: !animate,
-        litAt: 0,
-      });
-      edges.push({ from: `concept-${i % concepts}`, to: `entity-${i}`, alpha: 0, targetAlpha: animate ? 0 : 0.2 });
-    }
+    // Section — inner ring
+    byType.section.forEach((n, i) => {
+      const angle = (i / Math.max(byType.section.length, 1)) * Math.PI * 2 + Math.random() * 0.2;
+      const r = 60 + Math.random() * 40;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      nodePos[n.id] = { x, y };
+      nodes.push({ id: n.id, x, y, vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3, radius: NODE_RADIUS.section, color: COLORS.section, alpha: 0, targetAlpha: animate ? 0 : 0.85, type: "section", label: n.label, lit: !animate, litAt: 0 });
+    });
 
-    // Cross-concept connections
-    for (let i = 0; i < concepts; i++) {
-      if (Math.random() > 0.6) {
-        const j = (i + 1 + Math.floor(Math.random() * 4)) % concepts;
-        edges.push({ from: `concept-${i}`, to: `concept-${j}`, alpha: 0, targetAlpha: animate ? 0 : 0.15 });
-      }
-    }
+    // Concept — outer ring
+    byType.concept.forEach((n, i) => {
+      const angle = (i / Math.max(byType.concept.length, 1)) * Math.PI * 2 + Math.random() * 0.4;
+      const r = 110 + Math.random() * 60;
+      const x = cx + Math.cos(angle) * r;
+      const y = cy + Math.sin(angle) * r;
+      nodePos[n.id] = { x, y };
+      nodes.push({ id: n.id, x, y, vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4, radius: NODE_RADIUS.concept, color: COLORS.concept, alpha: 0, targetAlpha: animate ? 0 : 0.8, type: "concept", label: n.label, lit: !animate, litAt: 0 });
+    });
+
+    const edges: GraphEdge[] = apiEdges.map(e => ({
+      from: e.source,
+      to: e.target,
+      alpha: 0,
+      targetAlpha: animate ? 0 : 0.25 * e.weight,
+    }));
 
     nodesRef.current = nodes;
     edgesRef.current = edges;
     litCountRef.current = animate ? 0 : nodes.length;
     lastSpawnRef.current = 0;
+  }, [dimensions, animate]);
+
+  const buildFallbackGraph = useCallback(() => {
+    const docs = stats?.documents ?? 1;
+    const secs = stats?.sections ?? 16;
+    const concepts = stats?.concepts ?? 21;
+    const cx = dimensions.w / 2;
+    const cy = dimensions.h / 2;
+    const nodes: GraphNode[] = [];
+    const edges: GraphEdge[] = [];
+
+    for (let i = 0; i < docs; i++) {
+      const angle = (i / docs) * Math.PI * 2;
+      nodes.push({ id: `doc-${i}`, x: cx + Math.cos(angle) * 25, y: cy + Math.sin(angle) * 25, vx: 0, vy: 0, radius: NODE_RADIUS.document, color: COLORS.document, alpha: 0, targetAlpha: animate ? 0 : 0.9, type: "document", label: `Document ${i + 1}`, lit: !animate, litAt: 0 });
+    }
+    for (let i = 0; i < secs; i++) {
+      const angle = (i / secs) * Math.PI * 2 + Math.random() * 0.3;
+      const r = 65 + Math.random() * 45;
+      nodes.push({ id: `sec-${i}`, x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r, vx: (Math.random() - 0.5) * 0.3, vy: (Math.random() - 0.5) * 0.3, radius: NODE_RADIUS.section, color: COLORS.section, alpha: 0, targetAlpha: animate ? 0 : 0.8, type: "section", label: `Section ${i + 1}`, lit: !animate, litAt: 0 });
+      edges.push({ from: `doc-${i % docs}`, to: `sec-${i}`, alpha: 0, targetAlpha: animate ? 0 : 0.3 });
+    }
+    for (let i = 0; i < concepts; i++) {
+      const angle = (i / concepts) * Math.PI * 2 + Math.random() * 0.5;
+      const r = 110 + Math.random() * 60;
+      nodes.push({ id: `concept-${i}`, x: cx + Math.cos(angle) * r, y: cy + Math.sin(angle) * r, vx: (Math.random() - 0.5) * 0.4, vy: (Math.random() - 0.5) * 0.4, radius: NODE_RADIUS.concept, color: COLORS.concept, alpha: 0, targetAlpha: animate ? 0 : 0.8, type: "concept", label: `Concept ${i + 1}`, lit: !animate, litAt: 0 });
+      edges.push({ from: `sec-${i % secs}`, to: `concept-${i}`, alpha: 0, targetAlpha: animate ? 0 : 0.25 });
+    }
+    nodesRef.current = nodes;
+    edgesRef.current = edges;
+    litCountRef.current = animate ? 0 : nodes.length;
+    lastSpawnRef.current = 0;
   }, [stats, dimensions, animate]);
+
+  const buildGraph = useCallback(() => {
+    fetch("/api/knowledge-graph")
+      .then(r => r.json())
+      .then(data => {
+        if (data.nodes?.length > 0) {
+          setLiveStats({ nodes: data.meta.totalNodes, edges: data.meta.totalEdges, live: data.meta.live });
+          buildGraphFromData(data.nodes, data.edges);
+        } else {
+          buildFallbackGraph();
+        }
+      })
+      .catch(() => buildFallbackGraph());
+  }, [buildGraphFromData, buildFallbackGraph]);
 
   // Resize observer
   useEffect(() => {
@@ -354,11 +345,11 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
         ))}
       </div>
       {/* Stats overlay */}
-      {stats && (
+      {(liveStats || stats) && (
         <div className="absolute top-3 right-3 z-10 text-right">
-          <p className="text-[10px] text-white/40 uppercase tracking-wider">Live</p>
-          <p className="text-sm font-bold text-white/80 tabular-nums">{stats.nodes} <span className="text-[10px] font-normal text-white/40">nodes</span></p>
-          <p className="text-sm font-bold text-white/80 tabular-nums">{stats.edges} <span className="text-[10px] font-normal text-white/40">edges</span></p>
+          <p className="text-[10px] text-white/40 uppercase tracking-wider">{liveStats?.live ? "Live" : "Cached"}</p>
+          <p className="text-sm font-bold text-white/80 tabular-nums">{liveStats?.nodes ?? stats?.nodes ?? 0} <span className="text-[10px] font-normal text-white/40">nodes</span></p>
+          <p className="text-sm font-bold text-white/80 tabular-nums">{liveStats?.edges ?? stats?.edges ?? 0} <span className="text-[10px] font-normal text-white/40">edges</span></p>
         </div>
       )}
       <canvas

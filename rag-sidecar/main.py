@@ -1,6 +1,7 @@
 # Created by Sankritya on Feb 27, 2026
 # RAG Sidecar — Production-grade FastAPI RAG server
-# Pipeline: PDF parse → Groq contextual chunking (cached) → BM25 + cosine hybrid → Groq query expansion
+# Pipeline: PDF parse → Local LLM contextual chunking (cached) → BM25 + cosine hybrid → Local LLM query expansion
+# LLM backend: Ollama (local, primary) → Groq (cloud, fallback)
 # Scalable: hash-based disk cache for chunks+embeddings, multi-doc support, /ingest endpoint
 
 from __future__ import annotations
@@ -14,15 +15,21 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
+import urllib.request
+import urllib.error
 import numpy as np
 import bm25s
 import pymupdf
 from sentence_transformers import SentenceTransformer
-from groq import Groq, RateLimitError
 from fastapi import BackgroundTasks, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
+try:
+    from groq import Groq, RateLimitError
+    _GROQ_AVAILABLE = True
+except ImportError:
+    _GROQ_AVAILABLE = False
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 
@@ -39,9 +46,15 @@ CHUNK_SIZE     = 100    # words per chunk
 OVERLAP        = 50     # word overlap between adjacent chunks
 MIN_CHUNK_WORDS = 30    # skip pages shorter than this
 FINAL_TOP_K    = 5      # results returned per query
-GROQ_MODEL     = "llama-3.1-8b-instant"
-GROQ_MAX_RETRIES = 5    # retries on rate-limit / transient errors
-GROQ_BASE_DELAY  = 1.0  # seconds — doubles on each retry
+# ── Local Ollama config (primary LLM backend) ────────────────────────────────
+OLLAMA_URL       = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
+OLLAMA_MODEL     = os.environ.get("OLLAMA_MODEL", "llama3.2:3b-instruct-q4_K_M")
+# ── Groq config (optional cloud fallback) ─────────────────────────────────────
+GROQ_MODEL       = "llama-3.1-8b-instant"
+GROQ_MAX_RETRIES = 2    # fewer retries now that Ollama is primary
+GROQ_BASE_DELAY  = 1.0  # seconds
+
+_ollama_available: Optional[bool] = None  # cached after first check
 
 DOCS_DIR.mkdir(exist_ok=True)
 CACHE_DIR.mkdir(exist_ok=True)
@@ -63,12 +76,62 @@ chunks:   List[dict] = []          # all indexed chunks across all docs
 bm25_index: Optional[bm25s.BM25] = None
 _ingesting = False                 # guard against concurrent /ingest calls
 
-# ─── Groq client with retry ───────────────────────────────────────────────────
+# ─── Ollama (local, primary LLM) ─────────────────────────────────────────────
 
-_groq: Optional[Groq] = None
+def is_ollama_up() -> bool:
+    """Check if Ollama is running and the target model is available."""
+    global _ollama_available
+    if _ollama_available is not None:
+        return _ollama_available
+    try:
+        req = urllib.request.Request(f"{OLLAMA_URL}/api/tags")
+        with urllib.request.urlopen(req, timeout=2) as r:
+            data = json.loads(r.read())
+            models = [m["name"] for m in data.get("models", [])]
+            # Accept partial match (e.g. "llama3.2:3b" matches "llama3.2:3b-instruct-q4_K_M")
+            base = OLLAMA_MODEL.split(":")[0]
+            _ollama_available = any(base in m for m in models)
+            if _ollama_available:
+                log.info("✅ Ollama is up — using local model: %s", OLLAMA_MODEL)
+            else:
+                log.warning("⚠️  Ollama running but model '%s' not found. Run: ollama pull %s", OLLAMA_MODEL, OLLAMA_MODEL)
+    except Exception:
+        _ollama_available = False
+        log.info("ℹ️  Ollama not running — will use Groq fallback")
+    return _ollama_available
 
-def get_groq() -> Optional[Groq]:
+
+def ollama_call(messages: list, max_tokens: int = 60) -> Optional[str]:
+    """Call local Ollama with OpenAI-compatible /api/chat endpoint."""
+    payload = json.dumps({
+        "model": OLLAMA_MODEL,
+        "messages": messages,
+        "stream": False,
+        "options": {"temperature": 0.0, "num_predict": max_tokens},
+    }).encode()
+    try:
+        req = urllib.request.Request(
+            f"{OLLAMA_URL}/api/chat",
+            data=payload,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=30) as r:
+            data = json.loads(r.read())
+            return data["message"]["content"].strip().strip('"').strip("'")
+    except Exception as exc:
+        log.warning("Ollama call failed: %s", exc)
+        return None
+
+
+# ─── Groq (cloud, optional fallback) ─────────────────────────────────────────
+
+_groq = None
+
+def get_groq():
     global _groq
+    if not _GROQ_AVAILABLE:
+        return None
     if _groq is None:
         key = os.environ.get("GROQ_API_KEY", "")
         if key:
@@ -77,10 +140,7 @@ def get_groq() -> Optional[Groq]:
 
 
 def groq_call(messages: list, max_tokens: int = 60) -> Optional[str]:
-    """
-    Call Groq with exponential backoff on rate-limit / server errors.
-    Returns the response text or None on persistent failure.
-    """
+    """Groq fallback — only used when Ollama is unavailable."""
     client = get_groq()
     if not client:
         return None
@@ -94,16 +154,27 @@ def groq_call(messages: list, max_tokens: int = 60) -> Optional[str]:
                 max_tokens=max_tokens,
             )
             return resp.choices[0].message.content.strip().strip('"').strip("'")
-        except RateLimitError:
-            log.warning("Groq rate limit — sleeping %.1fs (attempt %d/%d)", delay, attempt + 1, GROQ_MAX_RETRIES)
-            time.sleep(delay)
-            delay = min(delay * 2, 60.0)
         except Exception as exc:
-            log.warning("Groq error: %s — sleeping %.1fs (attempt %d/%d)", exc, delay, attempt + 1, GROQ_MAX_RETRIES)
+            err_str = str(exc)
+            if "401" in err_str or "invalid_api_key" in err_str:
+                log.error("❌ Groq API key invalid — set GROQ_API_KEY in .env.local")
+                return None
+            log.warning("Groq error: %s (attempt %d/%d)", exc, attempt + 1, GROQ_MAX_RETRIES)
             time.sleep(delay)
-            delay = min(delay * 2, 60.0)
-    log.error("Groq call failed after %d retries", GROQ_MAX_RETRIES)
+            delay = min(delay * 2, 30.0)
     return None
+
+
+# ─── Unified LLM call: Ollama → Groq → None ──────────────────────────────────
+
+def llm_call(messages: list, max_tokens: int = 60) -> Optional[str]:
+    """Try Ollama first (local), fall back to Groq (cloud)."""
+    if is_ollama_up():
+        result = ollama_call(messages, max_tokens)
+        if result:
+            return result
+        log.warning("Ollama call returned empty — falling back to Groq")
+    return groq_call(messages, max_tokens)
 
 # ─── PDF hashing ──────────────────────────────────────────────────────────────
 
@@ -179,15 +250,15 @@ def parse_pdf(pdf_path: Path) -> List[dict]:
     log.info("Parsed %d pages from %s", len(pages), pdf_path.name)
     return pages
 
-# ─── Groq Contextual Chunk Generation (Anthropic technique) ──────────────────
+# ─── Contextual Chunk Generation (Anthropic technique) ──────────────────────
 
 def generate_chunk_context(chunk_text: str, section_title: str, doc_name: str) -> str:
     """
-    Generate a 1-sentence context description via Groq.
+    Generate a 1-sentence context description via local LLM (Ollama) or Groq fallback.
     Domain-agnostic: uses doc_name instead of hardcoded 'poll worker'.
-    Falls back to section-title prefix if Groq unavailable.
+    Falls back to section-title prefix if no LLM available.
     """
-    result = groq_call([{
+    result = llm_call([{
         "role": "user",
         "content": (
             f"Document: {doc_name}\n"
@@ -200,7 +271,6 @@ def generate_chunk_context(chunk_text: str, section_title: str, doc_name: str) -
     }], max_tokens=60)
 
     if result:
-        time.sleep(0.12)   # ~8 req/s — safely within 30 req/min free tier
         return f"{result} | [{section_title}] {chunk_text}"
     return f"[{section_title}] {chunk_text}"
 
@@ -402,15 +472,15 @@ def normalize_scores(scored: List[tuple]) -> Dict[str, float]:
 
 def expand_query(query: str) -> str:
     """
-    Groq-powered query expansion: convert natural-language question to
+    LLM-powered query expansion: convert natural-language question to
     specific verbatim keywords from the document domain.
-    Falls back to original query if Groq unavailable.
+    Uses Ollama (local) first, falls back to Groq, then returns original query.
     """
     # Infer doc names for the prompt so it's domain-agnostic
     doc_names = list({c["doc_name"] for c in chunks})
     docs_label = ", ".join(doc_names[:3]) or "training document"
 
-    result = groq_call([{
+    result = llm_call([{
         "role": "user",
         "content": (
             f"You are helping search these documents: {docs_label}.\n"
