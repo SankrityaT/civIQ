@@ -12,7 +12,7 @@ interface CachedEntry {
 }
 
 const cache = new Map<string, CachedEntry>();
-const CACHE_VERSION = 11;  // bumped: hardened system prompt for exact-fact extraction
+const CACHE_VERSION = 15;  // bumped: fixed sidecar penalty bug (election night sections were penalized, causing wrong transport box answers)
 
 /** Normalize a question for consistent cache keys */
 function normalizeKey(question: string): string {

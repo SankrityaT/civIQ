@@ -34,11 +34,9 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
   const pageRef = useRef<HTMLDivElement>(null);
 
   // Map document name → served PDF path
-  // doc_name from sidecar = filename stem title-cased, e.g. "Finaltestmanual" or "Poll Worker Training Manual"
+  // doc_name from sidecar = filename stem title-cased, e.g. "Finaltestmanual"
   const getPdfPath = (meta: typeof active): string => {
-    const name = (meta?.documentName ?? meta?.documentId ?? "").toLowerCase().replace(/[\s_-]+/g, "");
-    if (name.includes("finaltest") || name.includes("finaltestmanual") || name.includes("jurisdictional")) return "/finaltestmanual.pdf";
-    if (name.includes("pollworker") || name.includes("poll") || name.includes("training")) return "/poll_worker_training_manual.pdf";
+    // Always use finaltestmanual.pdf — it's the only active document
     return "/finaltestmanual.pdf";
   };
   const pdfPath = getPdfPath(active);
@@ -214,6 +212,9 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
           file={pdfPath}
           onLoadSuccess={({ numPages: n }) => { setNumPages(n); }}
           onLoadError={(e) => console.error("PDF load error:", e)}
+          onItemClick={({ pageNumber }) => {
+            if (pageNumber && pageNumber >= 1) setCurrentPage(pageNumber);
+          }}
           loading={
             <div className="flex flex-col items-center justify-center h-64 gap-4">
               <FilePdf className="h-12 w-12 text-slate-300 animate-pulse" weight="duotone" />
@@ -229,7 +230,7 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
               pageNumber={currentPage}
               width={pdfWidth}
               renderTextLayer={true}
-              renderAnnotationLayer={true}
+              renderAnnotationLayer={false}
               onRenderSuccess={() => {
                 if (currentPage === targetPage) {
                   setTimeout(() => highlightPageText(active.chunkContent), 200);

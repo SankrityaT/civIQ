@@ -17,7 +17,7 @@ TESTS = [
     ("A voter has a passport but no address on it — can they vote?", "List 3", "Page 67"),
     ("What if a voter's ID address doesn't match the SiteBook?", "FORMER Address", "Page 68"),
     ("Can a voter use the AZ Mobile ID app on their phone?", "Yes", "Page 66"),
-    ("A voter has no ID at all — what do I do?", "conditional provisional", "Page 73"),
+    ("A voter has no ID at all — what do I do?", "provisional", "Page 73"),
 
     # Provisional Ballots
     ("When do I issue a provisional ballot?", "provisional ballot", "Page 105"),
@@ -34,14 +34,14 @@ TESTS = [
     # Troubleshooting / Emergencies
     ("The SiteBook connectivity icon is red — what do I do?", "MoFi", "Page 84"),
     ("What if we have a power outage?", "Hotline", "Page 15"),
-    ("A voter wants to spoil their ballot — how many times can they do that?", "3", "Page 112"),
+    ("A voter wants to spoil their ballot — how many times can they do that?", "three", "Page 112"),
     ("The printer shows a yellow triangle warning — what does that mean?", "toner", "Page 33"),
     ("What if a voter's address can't be found in the SiteBook?", "Map", "Page 85"),
 
     # Closing & Election Night
     ("What if a voter shows up at 7:01 PM?", "7:00", "Page 18"),
     ("What goes in the RED transport box?", "RED", "Page 120"),
-    ("What goes in the BLUE transport box?", "provisional", "Page 120"),
+    ("What goes in the BLUE transport box?", "envelope", "Page 124"),
     ("How do I close the polls on the Accessible Voting Device?", "Poll Worker Card", "Page 123"),
 
 

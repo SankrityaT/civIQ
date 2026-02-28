@@ -346,3 +346,15 @@ html {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.7; }
 }
+
+/* ── Skeleton shimmer for ThinkingAnimation ──────────────── */
+@keyframes skeleton-shimmer {
+  0%   { background-position: -400px 0; }
+  100% { background-position: 400px 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, #e2e8f0 25%, #f1f5f9 50%, #e2e8f0 75%);
+  background-size: 800px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}

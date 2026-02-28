@@ -3,6 +3,10 @@ import { AuditEntry, Language, UserType } from "@/types";
 // In-memory audit log — production: persist to SQLite or a local DB
 const entries: AuditEntry[] = [];
 
+// Dedup: track last logged question per userType to prevent double-logging
+const _lastLogged = new Map<string, number>();
+const DEDUP_WINDOW_MS = 5000; // ignore duplicate within 5 seconds
+
 export function logInteraction(params: {
   userType: UserType;
   question: string;
@@ -11,7 +15,16 @@ export function logInteraction(params: {
   language: Language;
   flagged?: boolean;
   cached?: boolean;
-}): AuditEntry {
+}): AuditEntry | null {
+  // Dedup: skip if exact same interaction was logged within the window
+  const dedupKey = `${params.userType}::${params.flagged ? "flag" : params.cached ? "cache" : "ask"}::${params.question.toLowerCase().trim()}`;
+  const now = Date.now();
+  const lastTime = _lastLogged.get(dedupKey);
+  if (lastTime && now - lastTime < DEDUP_WINDOW_MS) {
+    return null;
+  }
+  _lastLogged.set(dedupKey, now);
+
   const entry: AuditEntry = {
     id: crypto.randomUUID(),
     timestamp: new Date().toISOString(),

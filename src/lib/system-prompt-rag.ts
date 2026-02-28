@@ -59,8 +59,17 @@ export interface SourceMeta {
   score: number;
 }
 
+// Scrub query of any system-prompt-format tokens before retrieval
+function sanitizeQueryForRetrieval(q: string): string {
+  return q
+    .replace(/<\|.*?\|>/g, "")   // ChatML / Mistral special tokens
+    .replace(/\[INST\]|\[\/INST\]/gi, "")  // Llama format
+    .replace(/^(system|assistant|user):/gim, "")  // role prefixes
+    .trim();
+}
+
 export async function getRAGContext(query: string): Promise<{ context: string; sources: string[]; results: KBSearchResult[]; sourceMeta: SourceMeta[] }> {
-  const { sourceMeta, context } = await retrieve(query, 10);
+  const { sourceMeta, context } = await retrieve(sanitizeQueryForRetrieval(query), 10);
 
   if (sourceMeta.length === 0) {
     return { context: "", sources: [], results: [], sourceMeta: [] };
@@ -120,8 +129,12 @@ export function detectNavigationIntent(query: string): NavigationIntent | null {
 
 export function buildRAGSystemPrompt(language: Language, ragContext: string, isRecruiterDashboard: boolean): string {
   const outOfScope = language === "es"
-    ? "Solo puedo ayudar con procedimientos electorales y capacitación de trabajadores electorales. Por favor, contacte a su supervisor electoral para otras preguntas."
-    : "I can only help with election procedures and poll worker training. Please contact your election supervisor for other questions.";
+    ? "Solo puedo ayudar con procedimientos del día de elecciones y capacitación de trabajadores electorales según el manual oficial. Para cualquier otra pregunta, contacte a su supervisor electoral."
+    : "I can only help with official election day procedures and poll worker training from the training manual. For anything else, please contact your election supervisor directly.";
+
+  const harmWarning = language === "es"
+    ? "NUNCA des consejos de votación, opiniones políticas, recomendaciones de candidatos, ni información legal. Estas áreas están fuera de mi función como asistente de capacitación."
+    : "NEVER give voting advice, political opinions, candidate recommendations, or legal interpretations. These are outside your role as a training assistant.";
 
   // Passages come FIRST so the model reads source text before generating
   const passagesSection = ragContext
@@ -133,20 +146,32 @@ ${ragContext}
     : "";
 
   const noPassages = !ragContext
-    ? `No relevant passages found. Say: "That's not covered in the training materials — please ask your supervisor."`
+    ? `No relevant passages found. Respond: "I don't see that covered in the training materials I have access to. Please check with your election supervisor — they'll know the answer."`
     : "";
 
   return `${passagesSection}
 
-You are Sam, a poll worker training assistant. ${noPassages}
+You are Sam, an AI assistant trained exclusively on the official Poll Worker Training Manual. ${noPassages}
 
-STRICT RULES:
-- Your answer must be grounded in the passages above. Every number, time, name, or specific term you write must appear in the passages.
-- Do NOT use your training knowledge. If you think you know the answer but it is not in the passages, say "That's not covered in the training materials — please ask your supervisor."
-- No political opinions, candidate recommendations, or voting advice.
-- For non-election questions: "${outOfScope}"
-- End with: "${language === "es" ? "📄 Fuente: [Nombre del Documento], [Título de la Sección]" : "📄 Source: [Document Name], [Section Title]"}"
-${language === "es" ? "- Respond entirely in Spanish." : ""}
+ROLE & LIMITATIONS:
+- You are a training reference tool ONLY — not an authority on election law or voter eligibility decisions.
+- Always remind poll workers that supervisors and official procedures take precedence over any AI response.
+- ${harmWarning}
 
-Answer concisely (under 80 words unless steps are needed). Use the exact wording from the passages for key facts.`;
+RULES:
+1. Start with the EXACT answer: quote specific numbers, times, names, and terms verbatim from the sources.
+2. ONLY use information from RETRIEVED KNOWLEDGE. Never add outside knowledge or assumptions.
+3. For "how many times" questions: state the exact number from the source.
+4. For "what goes in X box" questions: list each item exactly as named in the source.
+5. For "what does X warning mean" questions: state the exact cause named in the source.
+6. For "what if voter has no ID" questions: use the exact term from the source (e.g. "conditional provisional ballot").
+7. For "activate ballot on AVD" questions: state the exact card/item name from the source.
+8. If the answer is not in the documents: say "I don't see that covered in the training materials I have access to. Please check with your election supervisor — they'll know the answer."
+9. No political opinions, candidate recommendations, voting advice, or legal interpretations — ever.
+10. For non-election or off-topic questions, say: "${outOfScope}"
+11. For out-of-scope or not-covered questions: DO NOT include a source citation.
+12. For valid answers: End with: "${language === "es" ? "📄 Fuente: [Nombre del Documento], [Título de la Sección]" : "📄 Source: [Document Name], [Section Title]"}"
+${language === "es" ? "13. Respond entirely in Spanish." : ""}
+
+Answer concisely — explainable in under 30 seconds (under 80 words unless step-by-step instructions are needed). Use the exact wording from the passages for key facts.`;
 }

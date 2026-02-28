@@ -6,14 +6,18 @@
 
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import logging
+import math
 import os
 import re
 import time
+from datetime import datetime
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import urllib.request
 import urllib.error
@@ -21,7 +25,7 @@ import numpy as np
 import bm25s
 import pymupdf
 from sentence_transformers import SentenceTransformer
-from fastapi import BackgroundTasks, FastAPI, HTTPException
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
@@ -432,27 +436,30 @@ def parse_pdf(pdf_path: Path) -> List[dict]:
 
 _TIME_RE = re.compile(r'\b(\d{1,2}:\d{2}\s*(?:a\.m\.|p\.m\.|AM|PM|a\.m|p\.m))\.?', re.IGNORECASE)
 _DATE_RE = re.compile(r'\b((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2})', re.IGNORECASE)
-_DEADLINE_KW = re.compile(r'\b(arrive|open|close|closed|deadline|by|until|from|at)\b', re.IGNORECASE)
+_BOX_RE  = re.compile(r'(?:Packed and sealed\s+)?(RED|BLUE|GREEN|GRAY|WHITE|YELLOW)\s+Transport\s+Box(?:\(es\))?[:\s]+([^\n.]{5,120})', re.IGNORECASE)
 
 def generate_chunk_context(chunk_text: str, section_title: str, doc_name: str) -> str:
     """
-    Build contextual content with regex-extracted time/date facts prepended.
-    This ensures BM25 can match '6:00 a.m.' queries to the right chunk without
-    any LLM paraphrasing (which caused hallucination of wrong times).
+    Build contextual content with regex-extracted facts prepended.
+    Ensures BM25 can match specific queries (times, transport box contents, etc.)
+    without LLM paraphrasing.
     """
     times = _TIME_RE.findall(chunk_text)
     dates = _DATE_RE.findall(chunk_text)
+    box_matches = _BOX_RE.findall(chunk_text)
     facts = []
     if times:
         facts.append("Times mentioned: " + ", ".join(dict.fromkeys(times)))
     if dates:
         facts.append("Dates mentioned: " + ", ".join(dict.fromkeys(dates)))
+    for color, contents in box_matches:
+        facts.append(f"{color.upper()} Transport Box contains: {contents.strip()}")
     fact_prefix = (" | ".join(facts) + " | ") if facts else ""
     return f"[{section_title}] {fact_prefix}{chunk_text}"
 
 # ─── Disk Cache ───────────────────────────────────────────────────────────────
 
-CACHE_VERSION = "pplx-v1-280w"  # change when model or chunking params change
+CACHE_VERSION = "pplx-v1-280w-ctx2"  # bumped: added transport box fact extraction to contextual content
 
 def cache_path(doc_hash: str) -> Path:
     return CACHE_DIR / f"{doc_hash}_{CACHE_VERSION}.json"
@@ -686,12 +693,23 @@ def normalize_scores(scored: List[tuple]) -> Dict[str, float]:
 
 
 # Sections/content patterns that are reference/appendix material — penalise in ranking
+# NOTE: 'election night only' and 'nightly closing' deliberately excluded —
+# these sections contain the packing checklist answers (RED/BLUE transport box)
 _LOW_PRIORITY_SECTIONS = re.compile(
-    r'appendix|faq|glossary|table of contents|index|job duty card|marshal job|election night only|nightly closing',
+    r'appendix|faq|glossary|table of contents|index|job duty card|marshal job',
     re.IGNORECASE
 )
 _LOW_PRIORITY_CONTENT = re.compile(
     r'Appendix\s+\d+|FAQ,? continued|Job Duty Card|Marshal Job Duty',
+    re.IGNORECASE
+)
+# Queries about packing / transport boxes should boost closing/checklist sections
+_PACKING_QUERY = re.compile(
+    r'what\s+goes\s+in|transport\s+box|packing\s+check|red\s+box|blue\s+box|closing\s+check|election\s+night\s+close',
+    re.IGNORECASE
+)
+_CLOSING_SECTIONS = re.compile(
+    r'packing\s+checklist|election\s+night\s+only|nightly\s+closing|sealing\s+election|closing\s+check',
     re.IGNORECASE
 )
 
@@ -806,6 +824,9 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
         # Penalise by chunk content too (catches misclassified appendix pages)
         if _LOW_PRIORITY_CONTENT.search(raw):
             adj -= 0.4
+        # Boost closing/packing sections when query asks about transport boxes
+        if _PACKING_QUERY.search(query) and _CLOSING_SECTIONS.search(title):
+            adj += 0.4
         return adj
 
     # ── Fuse ──────────────────────────────────────────────────────────────────
@@ -848,14 +869,20 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
         
         rescued: List[dict] = []
         rescued_ids: set = set()
-        
-        for c in chunks:
-            if c["id"] in already or c["id"] in rescued_ids:
+
+        # Sort candidates by fused score (best first) so highest-relevance chunks win slots
+        candidates_sorted = sorted(
+            [c for c in chunks if c["id"] not in already],
+            key=lambda c: -fused_scores.get(c["id"], 0.0),
+        )
+
+        for c in candidates_sorted:
+            if c["id"] in rescued_ids:
                 continue
             raw_lower = c["raw_content"].lower()
             ctx_lower = c.get("contextual_content", "").lower()
             combined = raw_lower + " " + ctx_lower
-            
+
             # Check for specific terms first (high value)
             for term in specific_terms:
                 if term.lower() in combined:
@@ -868,7 +895,7 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
                 if matches >= max(2, len(words) // 2):
                     rescued.append(c)
                     rescued_ids.add(c["id"])
-            
+
             if len(rescued) >= k:
                 break
         
@@ -893,11 +920,12 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
             "document_name": c["doc_name"],
         })
         result_ids.add(cid)
-        if len(results) >= top_k - 3:   # reserve 3 slots for keyword rescue
+        if len(results) >= top_k - 5:   # reserve 5 slots for keyword rescue
             break
 
     # Second: keyword rescue pass — inject chunks with exact query terms
-    rescued = _keyword_rescue(query, fused, result_ids, k=3)
+    # Sorted by fused score so best-matching chunk wins a rescue slot (not just earliest in doc)
+    rescued = _keyword_rescue(query, fused, result_ids, k=5)
     for c in rescued:
         results.append({
             "chunk_id":      c["id"],
@@ -1132,6 +1160,559 @@ def list_chunks():
         "words": len(c["raw_content"].split()),
         "ctx":   c.get("contextual_content", "")[:150],
     } for c in chunks]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# VOTER SCORING SYSTEM — Created by Kinjal
+# Two-pass scoring: deterministic pre-score (all rows) → Ollama AI enrichment (top N)
+# ═══════════════════════════════════════════════════════════════════════════════
+
+VOTER_CACHE_PATH = CACHE_DIR / "voter-scores.json"
+VOTER_CSV_PATH   = CACHE_DIR / "voters.csv"
+AI_ENRICH_TOP_N  = 100       # how many top candidates get Ollama AI reasons
+AI_BATCH_SIZE    = 10        # candidates per Ollama call
+
+# ─── In-memory voter store ────────────────────────────────────────────────────
+
+voter_records: List[Dict[str, Any]]    = []   # raw parsed CSV rows
+scored_voters: List[Dict[str, Any]]    = []   # scored + sorted candidates
+_voter_scoring = False                        # guard against concurrent scoring
+_voter_stats: Dict[str, Any]           = {}   # cached summary stats
+
+
+REQUIRED_CSV_COLUMNS = {
+    "id", "first_name", "last_name", "age", "city", "precinct",
+    "languages", "registered_since", "previous_poll_worker", "availability",
+}
+
+
+def parse_voter_csv(raw_text: str) -> List[Dict[str, Any]]:
+    """Parse CSV text into list of dicts with type coercion."""
+    reader = csv.DictReader(io.StringIO(raw_text))
+    if not reader.fieldnames:
+        raise ValueError("CSV has no header row")
+
+    # Validate required columns
+    columns = {c.strip().lower() for c in reader.fieldnames}
+    missing = REQUIRED_CSV_COLUMNS - columns
+    if missing:
+        raise ValueError(f"CSV missing required columns: {', '.join(sorted(missing))}")
+
+    rows: List[Dict[str, Any]] = []
+    for raw_row in reader:
+        # Normalize keys to lowercase stripped
+        row = {k.strip().lower(): v.strip() if v else "" for k, v in raw_row.items()}
+        try:
+            row["age"] = int(row.get("age", 0))
+        except (ValueError, TypeError):
+            row["age"] = 0
+        # Normalize boolean
+        ppw = row.get("previous_poll_worker", "").lower()
+        row["previous_poll_worker"] = ppw in ("true", "1", "yes")
+        rows.append(row)
+
+    return rows
+
+
+def is_eligible(voter: Dict[str, Any]) -> bool:
+    """
+    Rigorous tiered eligibility filter.  A candidate must pass hard requirements
+    AND qualify through one of three tiers.  Designed to keep the pool at
+    roughly 10-20 % of uploaded records.
+
+    Tiers (any one is sufficient after hard requirements):
+      1. Bilingual AND previous poll worker  → always qualifies
+      2. Experienced + registered 8yr+ + age 28-62
+      3. Bilingual  + registered 10yr+ + age 28-60
+    """
+    # ── Hard requirements (instant reject) ──────────────────────────────────
+    age = voter.get("age", 0)
+    if age < 25 or age > 68:
+        return False
+
+    if not voter.get("first_name") or not voter.get("last_name"):
+        return False
+    if not voter.get("city") or not voter.get("precinct"):
+        return False
+
+    languages = voter.get("languages", "").strip()
+    if not languages:
+        return False
+
+    reg_date_str = voter.get("registered_since", "")
+    try:
+        reg_year = datetime.strptime(reg_date_str, "%Y-%m-%d").year
+        years_registered = datetime.now().year - reg_year
+    except (ValueError, TypeError):
+        return False
+
+    if years_registered < 3:
+        return False
+
+    # ── Derived flags ───────────────────────────────────────────────────────
+    is_bilingual = "," in languages
+    is_experienced = bool(voter.get("previous_poll_worker"))
+
+    # ── Tier 1: bilingual AND experienced → always qualifies ───────────────
+    if is_experienced and is_bilingual:
+        return True
+
+    # ── Tier 2: experienced + long registration + prime age ────────────────
+    if is_experienced and years_registered >= 8 and 28 <= age <= 62:
+        return True
+
+    # ── Tier 3: bilingual + very long registration + prime age ─────────────
+    if is_bilingual and years_registered >= 10 and 28 <= age <= 60:
+        return True
+
+    return False
+
+
+def deterministic_score(voter: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    Pass 1: Fast rule-based scoring. Returns score (0-100) + list of reason fragments.
+    Runs on ALL rows instantly.
+    """
+    score = 40
+    reasons: List[str] = []
+
+    # Previous poll worker experience → strongest signal
+    if voter.get("previous_poll_worker"):
+        score += 25
+        reasons.append("prior poll worker experience")
+
+    # Bilingual
+    langs = [l.strip() for l in voter.get("languages", "").split(",") if l.strip()]
+    if len(langs) > 1:
+        score += 15
+        non_english = [l for l in langs if l.lower() != "english"]
+        reasons.append(f"bilingual ({', '.join(non_english)})")
+
+    # Registration longevity
+    reg_date_str = voter.get("registered_since", "")
+    years_registered = 0
+    if reg_date_str:
+        try:
+            reg_year = datetime.strptime(reg_date_str, "%Y-%m-%d").year
+            years_registered = datetime.now().year - reg_year
+            if years_registered >= 10:
+                score += 10
+                reasons.append(f"registered {years_registered} years (high civic engagement)")
+            elif years_registered >= 5:
+                score += 7
+                reasons.append(f"registered {years_registered} years")
+        except ValueError:
+            pass
+
+    # Availability
+    if voter.get("availability", "").lower() == "available":
+        score += 5
+        reasons.append("marked available")
+
+    # Prime working age bonus
+    age = voter.get("age", 0)
+    if 25 <= age <= 65:
+        score += 5
+        reasons.append(f"age {age} (prime working range)")
+    elif 18 <= age < 25:
+        score += 3
+        reasons.append(f"age {age} (young voter engagement)")
+
+    return {
+        "score": min(score, 100),
+        "reasons": reasons,
+        "reason_text": ", ".join(reasons) if reasons else "meets basic eligibility",
+    }
+
+
+def build_candidate(voter: Dict[str, Any], score_data: Dict[str, Any], ai_enriched: bool = False) -> Dict[str, Any]:
+    """Transform a raw voter row + score into a candidate dict for the API."""
+    langs = [l.strip() for l in voter.get("languages", "").split(",") if l.strip()]
+    return {
+        "id":                 voter.get("id", ""),
+        "firstName":          voter.get("first_name", ""),
+        "lastName":           voter.get("last_name", ""),
+        "name":               f"{voter.get('first_name', '')} {voter.get('last_name', '')}",
+        "age":                voter.get("age", 0),
+        "address":            voter.get("address", ""),
+        "city":               voter.get("city", ""),
+        "precinct":           voter.get("precinct", ""),
+        "zip":                voter.get("zip", ""),
+        "languages":          langs,
+        "registeredSince":    voter.get("registered_since", ""),
+        "party":              voter.get("party", ""),
+        "email":              voter.get("email", ""),
+        "phone":              voter.get("phone", ""),
+        "previousPollWorker": voter.get("previous_poll_worker", False),
+        "availability":       voter.get("availability", ""),
+        "aiScore":            score_data["score"],
+        "aiReason":           score_data["reason_text"],
+        "aiEnriched":         ai_enriched,
+    }
+
+
+def ai_enrich_batch(candidates: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Pass 2: Use Ollama to generate refined scores + natural-language reasons
+    for a batch of top candidates. Only called for top N candidates.
+    """
+    if not is_ollama_up():
+        log.info("⚠️  Ollama not available — skipping AI enrichment")
+        return candidates
+
+    log.info("🧠 AI-enriching %d candidates via Ollama...", len(candidates))
+    enriched = 0
+
+    for i in range(0, len(candidates), AI_BATCH_SIZE):
+        batch = candidates[i:i + AI_BATCH_SIZE]
+
+        # Build a single prompt with all candidates in this batch
+        profiles = []
+        for j, c in enumerate(batch):
+            profiles.append(
+                f"{j+1}. {c['name']}, age {c['age']}, {c['city']} ({c['precinct']}), "
+                f"languages: {', '.join(c['languages'])}, "
+                f"registered since: {c['registeredSince']}, "
+                f"previous poll worker: {'yes' if c['previousPollWorker'] else 'no'}, "
+                f"current score: {c['aiScore']}"
+            )
+
+        prompt = (
+            "You are an election official AI assistant evaluating poll worker candidates.\n"
+            "For each candidate below, provide a REFINED score (0-100) and a brief 1-sentence reason "
+            "explaining why they would be a good or poor poll worker.\n"
+            "Consider: civic engagement, bilingual ability, experience, age diversity, and availability.\n\n"
+            "Candidates:\n" + "\n".join(profiles) + "\n\n"
+            "Respond ONLY in this exact format, one line per candidate:\n"
+            "1. SCORE: <number> | REASON: <one sentence>\n"
+            "2. SCORE: <number> | REASON: <one sentence>\n"
+            "... and so on. No other text."
+        )
+
+        result = ollama_call([{"role": "user", "content": prompt}], max_tokens=500)
+        if not result:
+            continue
+
+        # Parse the response
+        lines = result.strip().split("\n")
+        for line in lines:
+            match = re.match(r"(\d+)\.\s*SCORE:\s*(\d+)\s*\|\s*REASON:\s*(.+)", line.strip())
+            if match:
+                idx = int(match.group(1)) - 1
+                ai_score = int(match.group(2))
+                ai_reason = match.group(3).strip()
+                if 0 <= idx < len(batch):
+                    # Blend: 40% deterministic + 60% AI
+                    blended = round(0.4 * batch[idx]["aiScore"] + 0.6 * min(ai_score, 100))
+                    batch[idx]["aiScore"] = blended
+                    batch[idx]["aiReason"] = ai_reason
+                    batch[idx]["aiEnriched"] = True
+                    enriched += 1
+
+        if (i + AI_BATCH_SIZE) < len(candidates):
+            log.info("  AI enriched: %d/%d done", min(i + AI_BATCH_SIZE, len(candidates)), len(candidates))
+
+    log.info("✅ AI enrichment complete — %d/%d candidates enriched", enriched, len(candidates))
+    return candidates
+
+
+def score_all_voters() -> None:
+    """Full scoring pipeline: eligibility filter → deterministic pre-score → sort → AI enrich top N → cache."""
+    global scored_voters, _voter_stats
+
+    if not voter_records:
+        log.warning("No voter records loaded — nothing to score")
+        return
+
+    log.info("📊 Processing %d voter records...", len(voter_records))
+    t0 = time.time()
+
+    # Filter eligible voters first
+    eligible_voters = [v for v in voter_records if is_eligible(v)]
+    log.info("✅ %d eligible voters identified from %d total records", len(eligible_voters), len(voter_records))
+    
+    if not eligible_voters:
+        log.warning("No eligible voters found")
+        scored_voters = []
+        return
+
+    # Pass 1: deterministic scoring (only on eligible)
+    all_candidates: List[Dict[str, Any]] = []
+    for v in eligible_voters:
+        sd = deterministic_score(v)
+        all_candidates.append(build_candidate(v, sd))
+
+    # Sort by score descending
+    all_candidates.sort(key=lambda c: -c["aiScore"])
+
+    # Pass 2: AI enrich top N
+    top_n = all_candidates[:AI_ENRICH_TOP_N]
+    top_n = ai_enrich_batch(top_n)
+
+    # Re-sort after AI enrichment
+    all_candidates[:AI_ENRICH_TOP_N] = top_n
+    all_candidates.sort(key=lambda c: -c["aiScore"])
+
+    scored_voters = all_candidates
+    elapsed = time.time() - t0
+    log.info("✅ Scoring complete in %.1fs — %d candidates scored", elapsed, len(scored_voters))
+
+    # Compute stats
+    cities = {}
+    precincts = {}
+    lang_set = set()
+    bilingual_count = 0
+    experienced_count = 0
+    avg_score = 0
+
+    for c in scored_voters:
+        cities[c["city"]] = cities.get(c["city"], 0) + 1
+        precincts[c["precinct"]] = precincts.get(c["precinct"], 0) + 1
+        for l in c["languages"]:
+            lang_set.add(l)
+        if len(c["languages"]) > 1:
+            bilingual_count += 1
+        if c["previousPollWorker"]:
+            experienced_count += 1
+        avg_score += c["aiScore"]
+
+    avg_score = avg_score / len(scored_voters) if scored_voters else 0
+
+    _voter_stats = {
+        "loaded": True,
+        "scoring": False,
+        "totalRecords": len(voter_records),
+        "totalScored": len(scored_voters),  # Only eligible voters are scored
+        "eligibleCount": len(eligible_voters),
+        "aiEnrichedCount": sum(1 for c in scored_voters if c.get("aiEnriched")),
+        "bilingualCount": bilingual_count,
+        "experiencedCount": experienced_count,
+        "avgScore": round(avg_score, 1),
+        "cities": sorted(cities.keys()),
+        "cityCounts": cities,
+        "precincts": sorted(precincts.keys()),
+        "precinctCounts": precincts,
+        "languages": sorted(lang_set),
+    }
+
+    # Cache to disk
+    try:
+        serialisable = []
+        for c in scored_voters:
+            serialisable.append(c)
+        VOTER_CACHE_PATH.write_text(json.dumps({
+            "stats": _voter_stats,
+            "candidates": serialisable,
+        }, ensure_ascii=False, default=str))
+        log.info("💾 Voter scores cached to disk")
+    except Exception as exc:
+        log.warning("Cache save failed: %s", exc)
+
+
+def load_voter_cache() -> bool:
+    """Try loading previously scored voters from disk cache."""
+    global voter_records, scored_voters, _voter_stats
+    if not VOTER_CACHE_PATH.exists():
+        return False
+    if not VOTER_CSV_PATH.exists():
+        return False
+    try:
+        # Load raw CSV
+        raw = VOTER_CSV_PATH.read_text(encoding="utf-8")
+        voter_records = parse_voter_csv(raw)
+        # Load scored results
+        cached = json.loads(VOTER_CACHE_PATH.read_text())
+        scored_voters = cached.get("candidates", [])
+        _voter_stats = cached.get("stats", {})
+        log.info("✅ Loaded %d scored voters from cache", len(scored_voters))
+        return True
+    except Exception as exc:
+        log.warning("Voter cache load failed: %s", exc)
+        return False
+
+
+# ─── Voter API Models ────────────────────────────────────────────────────────
+
+class VoterFilterRequest(BaseModel):
+    city: Optional[str] = None
+    precinct: Optional[str] = None
+    languages: Optional[List[str]] = None
+    minAge: Optional[int] = None
+    maxAge: Optional[int] = None
+    minScore: Optional[int] = None
+    experiencedOnly: Optional[bool] = None
+    bilingualOnly: Optional[bool] = None
+    page: int = 1
+    pageSize: int = 50
+    sortBy: str = "aiScore"
+    sortDir: str = "desc"
+
+
+# ─── Voter Routes ────────────────────────────────────────────────────────────
+
+@app.post("/upload-voters")
+async def upload_voters(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """
+    Upload a voter registration CSV. Parses, validates, stores, and kicks off scoring.
+    """
+    global voter_records, scored_voters, _voter_scoring
+
+    if _voter_scoring:
+        raise HTTPException(status_code=409, detail="Scoring already in progress")
+
+    if not file.filename or not file.filename.endswith(".csv"):
+        raise HTTPException(status_code=400, detail="File must be a .csv")
+
+    raw = (await file.read()).decode("utf-8")
+
+    try:
+        voter_records = parse_voter_csv(raw)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    if len(voter_records) == 0:
+        raise HTTPException(status_code=400, detail="CSV contains no data rows")
+
+    # Save raw CSV to disk for cache reload
+    VOTER_CSV_PATH.write_text(raw, encoding="utf-8")
+    log.info("📥 Uploaded %d voter records from %s", len(voter_records), file.filename)
+
+    # Kick off scoring in background
+    _voter_scoring = True
+
+    def _run_scoring():
+        global _voter_scoring
+        try:
+            score_all_voters()
+        finally:
+            _voter_scoring = False
+
+    background_tasks.add_task(_run_scoring)
+
+    return {
+        "status": "upload_complete",
+        "totalRecords": len(voter_records),
+        "message": f"Uploaded {len(voter_records)} records. Scoring started in background.",
+        "scoring": True,
+    }
+
+
+@app.post("/score-voters")
+def score_voters_endpoint(req: VoterFilterRequest):
+    """
+    Return scored + filtered + paginated candidates.
+    Filters are applied server-side for performance.
+    """
+    if not scored_voters and not _voter_scoring:
+        # Try loading from cache
+        if not load_voter_cache():
+            raise HTTPException(status_code=404, detail="No voter data uploaded yet. Upload a CSV first.")
+
+    if _voter_scoring and not scored_voters:
+        return {
+            "candidates": [],
+            "totalScored": 0,
+            "totalFiltered": 0,
+            "page": 1,
+            "pageSize": req.pageSize,
+            "totalPages": 0,
+            "scoring": True,
+        }
+
+    # Apply filters
+    filtered = scored_voters
+    if req.city and req.city != "All":
+        filtered = [c for c in filtered if c["city"] == req.city]
+    if req.precinct and req.precinct != "All":
+        filtered = [c for c in filtered if c["precinct"] == req.precinct]
+    if req.languages:
+        filtered = [c for c in filtered if any(l in c["languages"] for l in req.languages)]
+    if req.minAge is not None:
+        filtered = [c for c in filtered if c["age"] >= req.minAge]
+    if req.maxAge is not None:
+        filtered = [c for c in filtered if c["age"] <= req.maxAge]
+    if req.minScore is not None:
+        filtered = [c for c in filtered if c["aiScore"] >= req.minScore]
+    if req.experiencedOnly:
+        filtered = [c for c in filtered if c["previousPollWorker"]]
+    if req.bilingualOnly:
+        filtered = [c for c in filtered if len(c["languages"]) > 1]
+
+    # Sort
+    reverse = req.sortDir == "desc"
+    if req.sortBy in ("aiScore", "age"):
+        filtered.sort(key=lambda c: c.get(req.sortBy, 0), reverse=reverse)
+    elif req.sortBy == "name":
+        filtered.sort(key=lambda c: c.get("name", "").lower(), reverse=reverse)
+    else:
+        filtered.sort(key=lambda c: c.get("aiScore", 0), reverse=True)
+
+    # Paginate
+    total_filtered = len(filtered)
+    total_pages = max(1, math.ceil(total_filtered / req.pageSize))
+    page = max(1, min(req.page, total_pages))
+    start = (page - 1) * req.pageSize
+    end = start + req.pageSize
+    page_candidates = filtered[start:end]
+
+    return {
+        "candidates": page_candidates,
+        "totalScored": len(scored_voters),
+        "totalFiltered": total_filtered,
+        "page": page,
+        "pageSize": req.pageSize,
+        "totalPages": total_pages,
+        "scoring": _voter_scoring,
+    }
+
+
+@app.get("/voter-stats")
+def voter_stats_endpoint():
+    """Return summary statistics for the uploaded voter dataset."""
+    if not _voter_stats and not scored_voters:
+        if not load_voter_cache():
+            return {
+                "loaded": False,
+                "totalRecords": 0,
+                "scoring": _voter_scoring,
+            }
+
+    return {
+        "loaded": True,
+        "scoring": _voter_scoring,
+        **_voter_stats,
+    }
+
+
+@app.post("/rescore-voters")
+async def rescore_voters(background_tasks: BackgroundTasks):
+    """Force a full re-score of the current voter dataset."""
+    global _voter_scoring
+    if not voter_records:
+        raise HTTPException(status_code=404, detail="No voter data loaded. Upload a CSV first.")
+    if _voter_scoring:
+        raise HTTPException(status_code=409, detail="Scoring already in progress")
+
+    _voter_scoring = True
+
+    def _run():
+        global _voter_scoring
+        try:
+            score_all_voters()
+        finally:
+            _voter_scoring = False
+
+    background_tasks.add_task(_run)
+    return {"status": "rescoring", "totalRecords": len(voter_records)}
+
+
+# ─── Load voter cache on startup ─────────────────────────────────────────────
+
+@app.on_event("startup")
+async def startup_voter_cache():
+    """Try loading voter scores from disk cache at startup."""
+    if load_voter_cache():
+        log.info("📊 Voter dataset loaded from cache: %d records", len(voter_records))
 
 
 if __name__ == "__main__":

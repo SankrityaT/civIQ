@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGroqClient } from "@/lib/groq";
+import { isOllamaAvailable, ollamaComplete } from "@/lib/ollama";
 import { getRAGContext, buildRAGSystemPrompt } from "@/lib/system-prompt-rag";
 import { getCachedResponse, setCachedResponse } from "@/lib/response-cache";
 import { logInteraction } from "@/lib/audit-logger";
@@ -12,12 +13,14 @@ export async function POST(req: NextRequest) {
     question,
     language = "en",
     action = "ask",
+    userType = "official",
     response: approvedResponse,
     source: approvedSource,
   } = body as {
     question: string;
     language: Language;
     action?: "ask" | "approve" | "flag";
+    userType?: "poll_worker" | "official";
     response?: string;
     source?: string;
   };
@@ -31,7 +34,7 @@ export async function POST(req: NextRequest) {
     const source = approvedSource ?? "Poll Worker Training Manual 2026";
     setCachedResponse(question, approvedResponse, source);
     logInteraction({
-      userType: "official",
+      userType,
       question,
       response: approvedResponse,
       sourceDoc: source,
@@ -50,7 +53,7 @@ export async function POST(req: NextRequest) {
   // Action: flag — log as flagged for review
   if (action === "flag" && approvedResponse) {
     logInteraction({
-      userType: "official",
+      userType,
       question,
       response: approvedResponse,
       sourceDoc: approvedSource ?? "Poll Worker Training Manual 2026",
@@ -73,23 +76,36 @@ export async function POST(req: NextRequest) {
   }
 
   const { context: ragContext } = await getRAGContext(question);
-  const groq = getGroqClient();
-  const completion = await groq.chat.completions.create({
-    model: GROQ_MODEL,
-    messages: [
-      { role: "system", content: buildRAGSystemPrompt(language, ragContext, true) },
-      { role: "user", content: question },
-    ],
-    temperature: 0.1,
-    max_tokens: 512,
-  });
+  const systemPrompt = buildRAGSystemPrompt(language, ragContext, true);
+  const messages: Array<{ role: "system" | "user"; content: string }> = [
+    { role: "system", content: systemPrompt },
+    { role: "user", content: question },
+  ];
 
-  const response = completion.choices[0]?.message?.content ?? "";
+  // Primary: local Ollama (smaller, faster model for AI Center testing)
+  let response: string | null = null;
+  const ollamaUp = await isOllamaAvailable();
+  if (ollamaUp) {
+    response = await ollamaComplete(messages, { maxTokens: 512, temperature: 0.1 });
+  }
+
+  // Fallback: Groq cloud if Ollama unavailable or failed
+  if (!response) {
+    const groq = getGroqClient();
+    const completion = await groq.chat.completions.create({
+      model: GROQ_MODEL,
+      messages,
+      temperature: 0.1,
+      max_tokens: 512,
+    });
+    response = completion.choices[0]?.message?.content ?? "";
+  }
+
   const sourceMatch = response.match(/📄 Source:\s*(.+)$/m);
   const source = sourceMatch?.[1]?.trim() ?? "Poll Worker Training Manual 2026";
 
   logInteraction({
-    userType: "official",
+    userType,
     question,
     response,
     sourceDoc: source,
