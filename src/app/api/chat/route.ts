@@ -22,6 +22,24 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Message is required" }, { status: 400 });
     }
 
+    // ── Prompt injection guard ─────────────────────────────────────────────────
+    const INJECTION_PATTERNS = /ignore\s+(all\s+)?previous\s+instructions|you\s+are\s+now|forget\s+(all\s+)?your\s+rules|new\s+system\s+prompt|disregard\s+(all\s+)?prior|act\s+as\s+(?:a\s+)?(?:different|general|new)|reveal\s+(?:your\s+)?(?:system|instructions)/i;
+    if (INJECTION_PATTERNS.test(message)) {
+      console.warn("🛡️ [API] Prompt injection attempt blocked:", message.substring(0, 80));
+      const refusal = "I can only help with election procedures and poll worker training. Please contact your election supervisor for other questions.";
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        start(controller) {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: refusal })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ done: true, sources: [] })}\n\n`));
+          controller.close();
+        },
+      });
+      return new Response(stream, {
+        headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+      });
+    }
+
     // Check cache first — return as a single JSON chunk with cached flag
     const cached = getCachedResponse(message);
     if (cached) {
@@ -61,60 +79,82 @@ export async function POST(req: NextRequest) {
     const { context: ragContext, sourceMeta } = await getRAGContext(message);
     console.log("📚 [API] RAG context length:", ragContext.length);
 
+    // ── DEBUG: Log each retrieved chunk so we can verify what the LLM sees ──
+    if (sourceMeta.length > 0) {
+      console.log("\n📋 [RAG] ═══ RETRIEVED CHUNKS ═══");
+      sourceMeta.forEach((m, i) => {
+        console.log(`  [${i + 1}] Score: ${m.score.toFixed(3)} | Page ${m.pageNumber} | §${m.sectionTitle}`);
+        console.log(`      Content (first 200 chars): ${m.chunkContent.substring(0, 200)}`);
+      });
+      console.log("📋 [RAG] ═══ END CHUNKS ═══\n");
+    } else {
+      console.warn("⚠️ [RAG] No chunks retrieved for query:", message);
+    }
+
     const systemPrompt = buildRAGSystemPrompt(language, ragContext, true);
+    // ── DEBUG: Log the full system prompt (truncated) ──
+    console.log("\n🧠 [PROMPT] ═══ SYSTEM PROMPT (first 1500 chars) ═══");
+    console.log(systemPrompt.substring(0, 1500));
+    console.log("🧠 [PROMPT] ═══ END ═══\n");
     const chatMessages = [
       { role: "system" as const, content: systemPrompt },
       ...conversationHistory.map((m) => ({ role: m.role as "user" | "assistant", content: m.content })),
       { role: "user" as const, content: message },
     ];
 
-    // ── Try Ollama (local) first ───────────────────────────────────────────────
-    const useOllama = await isOllamaAvailable();
-    console.log(`🤖 [API] LLM backend: ${useOllama ? `Ollama (${OLLAMA_MODEL})` : `Groq (${GROQ_MODEL})`}`);
-
+    // ── Ollama primary (local 8B model for election data privacy) ─────────────
     const encoder = new TextEncoder();
     let fullContent = "";
+    const ollamaUp = await isOllamaAvailable();
 
-    if (useOllama) {
-      const ollamaReadable = await ollamaStream(chatMessages, { maxTokens: 512, temperature: 0.1 });
+    if (ollamaUp) {
+      console.log(`🤖 [API] LLM backend: Ollama (${OLLAMA_MODEL})`);
+      const ollamaResult = await ollamaStream(chatMessages, {
+        maxTokens: 1024,
+        temperature: 0.0,
+      });
 
-      if (ollamaReadable) {
+      if (ollamaResult) {
         const stream = new ReadableStream({
           async start(controller) {
             try {
-              const reader = ollamaReadable.getReader();
+              const reader = ollamaResult.getReader();
               while (true) {
-                const { done, value: delta } = await reader.read();
+                const { done, value } = await reader.read();
                 if (done) break;
-                if (delta) {
-                  fullContent += delta;
-                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta })}\n\n`));
+                if (value) {
+                  fullContent += value;
+                  controller.enqueue(encoder.encode(`data: ${JSON.stringify({ delta: value })}\n\n`));
                 }
               }
               const sourceMatch = fullContent.match(/📄 Source:\s*(.+)$/m);
               const source = sourceMatch?.[1]?.trim() ?? "Poll Worker Training Manual 2026";
               setCachedResponse(message, fullContent, source, sourceMeta);
               logInteraction({ userType: "poll_worker", question: message, response: fullContent, sourceDoc: source, language, cached: false });
-              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta })}\n\n`));
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta, usedSidecar: true })}\n\n`));
               controller.close();
             } catch (err) {
               controller.error(err);
             }
           },
         });
-        return new Response(stream, { headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" } });
+
+        return new Response(stream, {
+          headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache" },
+        });
       }
-      console.warn("⚠️ [API] Ollama stream failed — falling back to Groq");
+      console.warn("⚠️ [API] Ollama stream returned null — falling back to Groq");
     }
 
-    // ── Groq fallback ─────────────────────────────────────────────────────────
-    console.log("� [API] GROQ_API_KEY exists:", !!process.env.GROQ_API_KEY);
+    // ── Groq fallback (cloud — only if Ollama is unavailable) ───────────────
+    console.log(`🤖 [API] LLM backend: Groq fallback (${GROQ_MODEL})`);
+    console.log("🔑 [API] GROQ_API_KEY exists:", !!process.env.GROQ_API_KEY);
     const groq = getGroqClient();
     const groqStream = await groq.chat.completions.create({
       model: GROQ_MODEL,
       messages: chatMessages,
-      temperature: 0.1,
-      max_tokens: 512,
+      temperature: 0.0,
+      max_tokens: 1024,
       stream: true,
     });
 
@@ -132,7 +172,7 @@ export async function POST(req: NextRequest) {
           const source = sourceMatch?.[1]?.trim() ?? "Poll Worker Training Manual 2026";
           setCachedResponse(message, fullContent, source, sourceMeta);
           logInteraction({ userType: "poll_worker", question: message, response: fullContent, sourceDoc: source, language, cached: false });
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta })}\n\n`));
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta, usedSidecar: false })}\n\n`));
           controller.close();
         } catch (err) {
           controller.error(err);

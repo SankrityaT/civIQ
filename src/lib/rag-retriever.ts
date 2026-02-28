@@ -5,7 +5,7 @@
 import { SourceMeta } from "@/types";
 
 const SIDECAR_URL = process.env.RAG_SIDECAR_URL ?? "http://127.0.0.1:8000";
-const SIDECAR_TIMEOUT_MS = 5000;
+const SIDECAR_TIMEOUT_MS = 15_000;
 
 // ─── Types matching the Python sidecar response ──────────────────────────────
 
@@ -49,7 +49,7 @@ async function isSidecarUp(): Promise<boolean> {
 
 // ─── Primary: Python sidecar ─────────────────────────────────────────────────
 
-async function retrieveFromSidecar(query: string, topK = 5): Promise<SourceMeta[]> {
+async function retrieveFromSidecar(query: string, topK = 15): Promise<SourceMeta[]> {
   const res = await fetch(`${SIDECAR_URL}/retrieve`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -100,7 +100,7 @@ export interface RetrievalResult {
   usedSidecar: boolean;
 }
 
-export async function retrieve(query: string, topK = 5): Promise<RetrievalResult> {
+export async function retrieve(query: string, topK = 15): Promise<RetrievalResult> {
   const up = await isSidecarUp();
 
   let sourceMeta: SourceMeta[];
@@ -120,11 +120,11 @@ export async function retrieve(query: string, topK = 5): Promise<RetrievalResult
     sourceMeta = await retrieveFromTS(query, topK);
   }
 
-  // Build RAG context string for the LLM system prompt
+  // Build RAG context — page number shown first so the model anchors to specific source
   const context = sourceMeta
     .map(
       (m, i) =>
-        `[Source ${i + 1}: ${m.documentName} — ${m.sectionTitle}]\n${m.chunkContent}`
+        `[Passage ${i + 1} | Page ${m.pageNumber} | ${m.documentName} — ${m.sectionTitle}]\n${m.chunkContent}`
     )
     .join("\n\n");
 

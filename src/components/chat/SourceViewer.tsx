@@ -36,10 +36,10 @@ export default function SourceViewer({ sourceMeta, activeIndex, onClose, onSelec
   // Map document name → served PDF path
   // doc_name from sidecar = filename stem title-cased, e.g. "Finaltestmanual" or "Poll Worker Training Manual"
   const getPdfPath = (meta: typeof active): string => {
-    const name = (meta?.documentName ?? meta?.documentId ?? "").toLowerCase().replace(/\s+/g, "");
-    if (name.includes("finaltest")) return "/finaltestmanual.pdf";
-    if (name.includes("pollworker") || name.includes("poll_worker")) return "/poll_worker_training_manual.pdf";
-    return "/poll_worker_training_manual.pdf";
+    const name = (meta?.documentName ?? meta?.documentId ?? "").toLowerCase().replace(/[\s_-]+/g, "");
+    if (name.includes("finaltest") || name.includes("finaltestmanual") || name.includes("jurisdictional")) return "/finaltestmanual.pdf";
+    if (name.includes("pollworker") || name.includes("poll") || name.includes("training")) return "/poll_worker_training_manual.pdf";
+    return "/finaltestmanual.pdf";
   };
   const pdfPath = getPdfPath(active);
   const targetPage = active?.pageNumber ?? 1;

@@ -634,6 +634,7 @@ export default function ChatWindow() {
   // Source viewer state
   const [activeSourceMeta, setActiveSourceMeta] = useState<SourceMeta[] | null>(null);
   const [activeSourceIndex, setActiveSourceIndex] = useState(0);
+  const [backendModel, setBackendModel] = useState<"ollama" | "groq" | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<{ stop: () => void } | null>(null);
@@ -826,6 +827,7 @@ export default function ChatWindow() {
                 finalCached = parsed.cached ?? false;
                 finalSourceMeta = parsed.sourceMeta ?? undefined;
                 if (parsed.content) accumulated = parsed.content;
+                if (parsed.usedSidecar !== undefined) setBackendModel(parsed.usedSidecar ? "ollama" : "groq");
                 console.log("🏁 [Client] Done event received, source:", finalSource);
                 // Show translating indicator if ES mode
                 if (language === "es" && accumulated.trim()) {
@@ -936,7 +938,11 @@ export default function ChatWindow() {
               </p>
               <p className="text-xs text-slate-500 flex items-center gap-1.5">
                 <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse"></span>
-                Poll Worker AI Assistant · {language === "en" ? "English" : "Español"}
+                Poll Worker AI Assistant · {language === "en" ? "English" : "Español"}{backendModel && (
+                  <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider ${backendModel === "ollama" ? "bg-emerald-100 text-emerald-700" : "bg-blue-100 text-blue-700"}`}>
+                    {backendModel === "ollama" ? "🔒 Local" : "☁ Groq"}
+                  </span>
+                )}
               </p>
             </div>
           </div>
