@@ -6,24 +6,21 @@
 import { useState, useEffect, useRef } from "react";
 import {
   Users,
-  Clock,
   Target,
-  TrendingUp,
-  Briefcase,
   CheckCircle2,
   ArrowUpRight,
-  ArrowDownRight,
   Filter,
   Calendar,
   Zap,
   FileText,
   UserPlus,
   Search,
-  BarChart3,
   PieChart,
+  Globe,
+  Star,
 } from "lucide-react";
 import Link from "next/link";
-import { TrainingDocument, AuditEntry } from "@/types";
+import { TrainingDocument, AuditEntry, VoterStats } from "@/types";
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SCROLL REVEAL
@@ -64,30 +61,6 @@ function AnimNum({ value, suffix = "", prefix = "" }: { value: number; suffix?: 
     requestAnimationFrame(animate);
   }, [value]);
   return <>{prefix}{display.toLocaleString()}{suffix}</>;
-}
-
-/* ═══════════════════════════════════════════════════════════════════════════
-   FUNNEL STAGE
-═══════════════════════════════════════════════════════════════════════════ */
-function FunnelStage({ label, count, pct, color, isLast = false }: { label: string; count: number; pct: number; color: string; isLast?: boolean }) {
-  const [width, setWidth] = useState(0);
-  useEffect(() => { setTimeout(() => setWidth(pct), 100); }, [pct]);
-  return (
-    <div className="group relative">
-      <div className="flex items-center justify-between mb-1.5">
-        <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wide">{label}</span>
-        <span className="text-[13px] font-semibold text-slate-900">{count}</span>
-      </div>
-      <div className="h-2 rounded-full bg-slate-100 overflow-hidden">
-        <div className={`h-full rounded-full transition-all duration-1000 ease-out ${color}`} style={{ width: `${width}%` }} />
-      </div>
-      {!isLast && (
-        <div className="absolute -bottom-3 left-1/2 -translate-x-1/2 text-slate-300">
-          <svg width="12" height="8" viewBox="0 0 12 8" fill="currentColor"><path d="M6 8L0 0h12L6 8z"/></svg>
-        </div>
-      )}
-    </div>
-  );
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -146,7 +119,7 @@ export default function DashboardPage() {
   const [docCount, setDocCount] = useState(0);
   const [auditStats, setAuditStats] = useState({ totalToday: 0, cachedCount: 0, totalAll: 0, spanishCount: 0, flaggedCount: 0 });
   const [recentEntries, setRecentEntries] = useState<AuditEntry[]>([]);
-  const [recruitCount, setRecruitCount] = useState(0);
+  const [voterStats, setVoterStats] = useState<VoterStats | null>(null);
 
   useEffect(() => {
     fetch("/api/documents").then(r => r.json()).then(d => {
@@ -158,42 +131,52 @@ export default function DashboardPage() {
       setRecentEntries((d.entries as AuditEntry[])?.slice(0, 6) ?? []);
     }).catch(() => {});
     fetch("/api/recruit")
-      .then(r => r.json()).then(d => setRecruitCount(d.totalScored ?? 0)).catch(() => {});
+      .then(r => r.json()).then((d: VoterStats) => { if (d.loaded) setVoterStats(d); }).catch(() => {});
   }, []);
 
-  // Simulated recruitment funnel data
-  const funnel = [
-    { label: "Applications", count: 847, pct: 100, color: "bg-amber-500" },
-    { label: "Screened", count: 412, pct: 49, color: "bg-amber-400" },
-    { label: "Interviewed", count: 156, pct: 18, color: "bg-slate-500" },
-    { label: "Offered", count: 42, pct: 5, color: "bg-slate-600" },
-    { label: "Hired", count: 28, pct: 3, color: "bg-slate-900" },
-  ];
+  // ─── Derived recruit data ──────────────────────────────────────────────────
+  const totalRecords   = voterStats?.totalRecords ?? 0;
+  const totalScored    = voterStats?.totalScored ?? 0;
+  const bilingualCount = voterStats?.bilingualCount ?? 0;
+  const experiencedCount = voterStats?.experiencedCount ?? 0;
+  const avgScore       = voterStats?.avgScore ?? 0;
+  const cityCounts     = voterStats?.cityCounts ?? {};
+  const languages      = voterStats?.languages ?? [];
 
-  // Source effectiveness
-  const sources = [
-    { label: "Employee Referrals", value: 34, color: "bg-amber-500" },
-    { label: "LinkedIn", value: 28, color: "bg-slate-600" },
-    { label: "Job Boards", value: 22, color: "bg-slate-400" },
-    { label: "Direct Apply", value: 16, color: "bg-amber-300" },
-  ];
+  // Eligibility rate as percentage
+  const eligibilityRate = totalRecords > 0 ? Math.round((totalScored / totalRecords) * 100) : 0;
 
-  // KPI cards
+  // KPI cards — real recruit data
   const kpis = [
-    { label: "Time to Hire", value: 23, suffix: " days", icon: Clock, trend: -12, trendLabel: "vs last month", bg: "bg-amber-50", iconColor: "text-amber-600", sparkColor: "#d97706", spark: [28, 32, 26, 24, 23, 25, 23] },
-    { label: "Open Positions", value: 18, suffix: "", icon: Briefcase, trend: 3, trendLabel: "new this week", bg: "bg-slate-100", iconColor: "text-slate-600", sparkColor: "#475569", spark: [12, 14, 15, 16, 18, 17, 18] },
-    { label: "Offer Accept Rate", value: 67, suffix: "%", icon: Target, trend: 8, trendLabel: "improvement", bg: "bg-emerald-50", iconColor: "text-emerald-600", sparkColor: "#059669", spark: [58, 62, 59, 64, 65, 67, 67] },
-    { label: "Cost per Hire", value: 4250, prefix: "$", suffix: "", icon: TrendingUp, trend: -5, trendLabel: "reduced", bg: "bg-amber-50", iconColor: "text-amber-600", sparkColor: "#d97706", spark: [4800, 4600, 4500, 4400, 4300, 4250, 4250] },
+    { label: "Voter Records", value: totalRecords, suffix: "", icon: Users, trend: 0, trendLabel: "uploaded", bg: "bg-slate-100", iconColor: "text-slate-600", sparkColor: "#475569", spark: [0, 0, 0, 0, 0, 0, totalRecords] },
+    { label: "Candidates Found", value: totalScored, suffix: "", icon: UserPlus, trend: eligibilityRate, trendLabel: "eligibility rate", bg: "bg-amber-50", iconColor: "text-amber-600", sparkColor: "#d97706", spark: [0, 0, 0, 0, 0, 0, totalScored] },
+    { label: "Avg Score", value: avgScore, suffix: "", icon: Star, trend: 0, trendLabel: "out of 100", bg: "bg-emerald-50", iconColor: "text-emerald-600", sparkColor: "#059669", spark: [0, 0, 0, 0, 0, 0, avgScore] },
+    { label: "Bilingual", value: bilingualCount, suffix: "", icon: Globe, trend: totalScored > 0 ? Math.round((bilingualCount / totalScored) * 100) : 0, trendLabel: "of candidates", bg: "bg-amber-50", iconColor: "text-amber-600", sparkColor: "#d97706", spark: [0, 0, 0, 0, 0, 0, bilingualCount] },
   ];
 
-  // Pipeline stages
+  // Pipeline — real recruit funnel
   const pipeline = [
-    { stage: "New", count: 124, color: "bg-slate-300" },
-    { stage: "Screening", count: 86, color: "bg-amber-400" },
-    { stage: "Interview", count: 42, color: "bg-amber-500" },
-    { stage: "Assessment", count: 18, color: "bg-slate-600" },
-    { stage: "Offer", count: 8, color: "bg-slate-900" },
+    { stage: "Uploaded", count: totalRecords, color: "bg-slate-300" },
+    { stage: "Eligible", count: totalScored, color: "bg-amber-400" },
+    { stage: "Experienced", count: experiencedCount, color: "bg-amber-500" },
+    { stage: "Bilingual", count: bilingualCount, color: "bg-slate-600" },
   ];
+
+  // Language distribution from real data
+  const langCounts: Record<string, number> = {};
+  if (voterStats?.cityCounts) {
+    // We don't have per-language counts from the API, so derive from languages list
+    // Each candidate has languages[] — we know bilingual vs monolingual
+    const monoCount = totalScored - bilingualCount;
+    if (bilingualCount > 0) langCounts["Bilingual"] = bilingualCount;
+    if (monoCount > 0) langCounts["Monolingual"] = monoCount;
+  }
+  const langTotal = Object.values(langCounts).reduce((a, b) => a + b, 0) || 1;
+  const sources = Object.entries(langCounts).map(([label, count], i) => ({
+    label,
+    value: Math.round((count / langTotal) * 100),
+    color: i === 0 ? "bg-amber-500" : "bg-slate-500",
+  }));
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-amber-50/50 via-white to-slate-50">
@@ -241,12 +224,6 @@ export default function DashboardPage() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4 mb-6">
           {kpis.map((kpi, i) => {
             const Icon = kpi.icon;
-            const TrendIcon = kpi.label === "Cost per Hire" || kpi.label === "Time to Hire" 
-              ? (kpi.trend < 0 ? ArrowDownRight : ArrowUpRight)
-              : (kpi.trend > 0 ? ArrowUpRight : ArrowDownRight);
-            const trendColor = kpi.label === "Cost per Hire" || kpi.label === "Time to Hire"
-              ? (kpi.trend < 0 ? "text-emerald-600" : "text-red-500")
-              : (kpi.trend > 0 ? "text-emerald-600" : "text-red-500");
             return (
               <Reveal key={kpi.label} delay={i * 80}>
                 <div className="group relative rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition-all duration-300 hover:border-slate-300 hover:shadow-md">
@@ -257,12 +234,16 @@ export default function DashboardPage() {
                     <Sparkline data={kpi.spark} color={kpi.sparkColor} />
                   </div>
                   <p className="font-[family-name:var(--font-playfair)] text-[28px] font-medium tracking-tight text-slate-900 leading-none">
-                    <AnimNum value={kpi.value} prefix={kpi.prefix} suffix={kpi.suffix} />
+                    <AnimNum value={kpi.value} suffix={kpi.suffix} />
                   </p>
                   <p className="mt-1.5 text-[12px] font-medium text-slate-500">{kpi.label}</p>
                   <div className="mt-3 flex items-center gap-1.5">
-                    <TrendIcon className={`h-3.5 w-3.5 ${trendColor}`} />
-                    <span className={`text-[11px] font-semibold ${trendColor}`}>{Math.abs(kpi.trend)}%</span>
+                    {kpi.trend > 0 && (
+                      <>
+                        <ArrowUpRight className="h-3.5 w-3.5 text-emerald-600" />
+                        <span className="text-[11px] font-semibold text-emerald-600">{kpi.trend}%</span>
+                      </>
+                    )}
                     <span className="text-[11px] text-slate-400">{kpi.trendLabel}</span>
                   </div>
                 </div>
@@ -274,117 +255,124 @@ export default function DashboardPage() {
         {/* ═══════════ MAIN GRID ═══════════ */}
         <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
           
-          {/* ─── POLL WORKER COVERAGE ─── */}
+          {/* ─── CANDIDATES BY CITY ─── */}
           <Reveal delay={100} className="lg:col-span-4">
             <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm h-full">
               <div className="flex items-center justify-between mb-5">
                 <div className="flex items-center gap-2">
                   <Target className="h-4 w-4 text-amber-600" />
-                  <h2 className="text-[14px] font-[family-name:var(--font-playfair)] font-semibold text-slate-900 tracking-wide">Coverage by Area</h2>
+                  <h2 className="text-[14px] font-[family-name:var(--font-playfair)] font-semibold text-slate-900 tracking-wide">Candidates by City</h2>
                 </div>
-                <span className="text-[16px] font-[family-name:var(--font-playfair)] font-medium text-slate-900">138 <span className="text-[11px] text-slate-400 font-sans">workers</span></span>
+                <span className="text-[16px] font-[family-name:var(--font-playfair)] font-medium text-slate-900">{totalScored} <span className="text-[11px] text-slate-400 font-sans">total</span></span>
               </div>
               
-              {/* Location list with progress bars */}
+              {/* City list from real data */}
               <div className="space-y-4">
-                {[
-                  { name: "Downtown Phoenix", workers: 24, target: 25, status: "full" },
-                  { name: "Mesa", workers: 21, target: 22, status: "full" },
-                  { name: "Scottsdale", workers: 18, target: 20, status: "good" },
-                  { name: "Tempe", workers: 15, target: 18, status: "good" },
-                  { name: "Gilbert", workers: 14, target: 16, status: "good" },
-                  { name: "Glendale", workers: 12, target: 18, status: "low" },
-                  { name: "North Phoenix", workers: 10, target: 15, status: "low" },
-                  { name: "Peoria", workers: 8, target: 14, status: "critical" },
-                ].map((loc, i) => {
-                  const pct = Math.min((loc.workers / loc.target) * 100, 100);
-                  const barColor = loc.status === "full" ? "bg-emerald-500" : loc.status === "good" ? "bg-amber-500" : loc.status === "low" ? "bg-orange-500" : "bg-red-500";
-                  const bgColor = loc.status === "full" ? "bg-emerald-50" : loc.status === "good" ? "bg-amber-50" : loc.status === "low" ? "bg-orange-50" : "bg-red-50";
-                  return (
-                    <div key={i} className="group">
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-[11px] text-slate-600">{loc.name}</span>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[12px] font-semibold text-slate-900">{loc.workers}</span>
-                          <span className="text-[10px] text-slate-400">/ {loc.target}</span>
+                {(() => {
+                  const sortedCities = Object.entries(cityCounts)
+                    .sort(([, a], [, b]) => b - a)
+                    .slice(0, 8);
+                  const maxCount = sortedCities.length > 0 ? sortedCities[0][1] : 1;
+                  
+                  if (sortedCities.length === 0) {
+                    return (
+                      <div className="py-8 text-center">
+                        <Users className="h-6 w-6 text-slate-300 mx-auto mb-2" />
+                        <p className="text-[12px] text-slate-400">Upload a CSV in Recruit to see city data</p>
+                      </div>
+                    );
+                  }
+
+                  return sortedCities.map(([city, count], i) => {
+                    const pct = (count / maxCount) * 100;
+                    const barColor = i < 2 ? "bg-amber-500" : i < 5 ? "bg-slate-500" : "bg-slate-300";
+                    return (
+                      <div key={city} className="group">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-[11px] text-slate-600">{city}</span>
+                          <span className="text-[12px] font-semibold text-slate-900">{count}</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                          <div className={`h-full rounded-full ${barColor} transition-all duration-700`} style={{ width: `${pct}%` }} />
                         </div>
                       </div>
-                      <div className={`h-1.5 rounded-full ${bgColor} overflow-hidden`}>
-                        <div className={`h-full rounded-full ${barColor} transition-all duration-700`} style={{ width: `${pct}%` }} />
-                      </div>
-                    </div>
-                  );
-                })}
+                    );
+                  });
+                })()}
               </div>
               
-              {/* Legend */}
+              {/* Footer */}
               <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-emerald-500" />
-                    <span className="text-[9px] text-slate-400">Full</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-amber-500" />
-                    <span className="text-[9px] text-slate-400">Good</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-orange-500" />
-                    <span className="text-[9px] text-slate-400">Low</span>
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <div className="w-2 h-2 rounded-full bg-red-500" />
-                    <span className="text-[9px] text-slate-400">Critical</span>
-                  </div>
-                </div>
-                <span className="text-[11px] text-slate-500">8 areas</span>
+                <span className="text-[11px] text-slate-400">Top cities by candidate count</span>
+                <span className="text-[11px] text-slate-500">{Object.keys(cityCounts).length} cities</span>
               </div>
             </div>
           </Reveal>
 
           {/* ─── PIPELINE + SOURCE ─── */}
           <div className="lg:col-span-4 space-y-6">
-            {/* Pipeline stages */}
+            {/* Recruit funnel */}
             <Reveal delay={150}>
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-2">
                     <Users className="h-4 w-4 text-slate-600" />
-                    <h2 className="text-[14px] font-[family-name:var(--font-playfair)] font-semibold text-slate-900 tracking-wide">Pipeline</h2>
+                    <h2 className="text-[14px] font-[family-name:var(--font-playfair)] font-semibold text-slate-900 tracking-wide">Recruit Funnel</h2>
                   </div>
-                  <span className="text-[16px] font-[family-name:var(--font-playfair)] font-medium text-slate-900">{pipeline.reduce((a, b) => a + b.count, 0)} <span className="text-[11px] text-slate-400 font-sans">total</span></span>
+                  <span className="text-[16px] font-[family-name:var(--font-playfair)] font-medium text-slate-900">{totalRecords > 0 ? totalRecords.toLocaleString() : "—"} <span className="text-[11px] text-slate-400 font-sans">uploaded</span></span>
                 </div>
-                <div className="flex gap-1 h-3 rounded-full overflow-hidden mb-4 bg-slate-100">
-                  {pipeline.map(p => (
-                    <div key={p.stage} className={`${p.color} transition-all duration-700`} style={{ width: `${(p.count / pipeline.reduce((a, b) => a + b.count, 0)) * 100}%` }} />
-                  ))}
-                </div>
-                <div className="grid grid-cols-5 gap-2">
-                  {pipeline.map(p => (
-                    <div key={p.stage} className="text-center">
-                      <div className={`w-2 h-2 rounded-full ${p.color} mx-auto mb-1`} />
-                      <p className="text-[14px] font-[family-name:var(--font-playfair)] font-medium text-slate-900">{p.count}</p>
-                      <p className="text-[9px] text-slate-400 uppercase">{p.stage}</p>
+                {totalRecords > 0 ? (
+                  <>
+                    <div className="flex gap-1 h-3 rounded-full overflow-hidden mb-4 bg-slate-100">
+                      {pipeline.map(p => (
+                        <div key={p.stage} className={`${p.color} transition-all duration-700`} style={{ width: `${totalRecords > 0 ? (p.count / totalRecords) * 100 : 0}%` }} />
+                      ))}
                     </div>
-                  ))}
-                </div>
+                    <div className="grid grid-cols-4 gap-2">
+                      {pipeline.map(p => (
+                        <div key={p.stage} className="text-center">
+                          <div className={`w-2 h-2 rounded-full ${p.color} mx-auto mb-1`} />
+                          <p className="text-[14px] font-[family-name:var(--font-playfair)] font-medium text-slate-900">{p.count.toLocaleString()}</p>
+                          <p className="text-[9px] text-slate-400 uppercase">{p.stage}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-6 text-center">
+                    <p className="text-[12px] text-slate-400">No recruit data yet</p>
+                  </div>
+                )}
               </div>
             </Reveal>
 
-            {/* Source effectiveness */}
+            {/* Language split */}
             <Reveal delay={200}>
               <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
                 <div className="flex items-center justify-between mb-5">
                   <div className="flex items-center gap-2">
                     <PieChart className="h-4 w-4 text-amber-600" />
-                    <h2 className="text-[14px] font-[family-name:var(--font-playfair)] font-semibold text-slate-900 tracking-wide">Source of Hire</h2>
+                    <h2 className="text-[14px] font-[family-name:var(--font-playfair)] font-semibold text-slate-900 tracking-wide">Language Split</h2>
                   </div>
                 </div>
-                <div className="space-y-4">
-                  {sources.map(s => (
-                    <SourceBar key={s.label} {...s} max={40} />
-                  ))}
-                </div>
+                {sources.length > 0 ? (
+                  <div className="space-y-4">
+                    {sources.map(s => (
+                      <SourceBar key={s.label} {...s} max={100} />
+                    ))}
+                    {languages.length > 0 && (
+                      <div className="pt-3 border-t border-slate-100">
+                        <p className="text-[11px] text-slate-400">
+                          Languages represented: <span className="font-medium text-slate-600">{languages.join(", ")}</span>
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="py-6 text-center">
+                    <p className="text-[12px] text-slate-400">No recruit data yet</p>
+                  </div>
+                )}
               </div>
             </Reveal>
           </div>
@@ -401,9 +389,9 @@ export default function DashboardPage() {
                 <div className="space-y-4">
                   {[
                     { label: "Active Documents", value: docCount, href: "/dashboard/documents", icon: FileText },
-                    { label: "Candidates Found", value: recruitCount, href: "/dashboard/recruit", icon: Users },
+                    { label: "Candidates Found", value: totalScored, href: "/dashboard/recruit", icon: Users },
+                    { label: "Experienced Workers", value: experiencedCount, href: "/dashboard/recruit", icon: Star },
                     { label: "Queries Today", value: auditStats.totalToday, href: "/dashboard/audit", icon: Search },
-                    { label: "Total Queries", value: auditStats.totalAll, href: "/dashboard/audit", icon: BarChart3 },
                   ].map(stat => {
                     const Icon = stat.icon;
                     return (
