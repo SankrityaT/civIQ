@@ -22,6 +22,7 @@ import {
   Cpu,
   BookOpen,
   CaretRight,
+  CaretLeft,
   Graph,
   Clock,
   IdentificationCard,
@@ -642,6 +643,7 @@ export default function ChatWindow() {
   const [fontSize, setFontSize] = useState(15);
   const [sourceViewerExpanded, setSourceViewerExpanded] = useState(false);
   const [isSpeaking, setIsSpeaking] = useState(false);
+  const [graphExpanded, setGraphExpanded] = useState(false);
   const [isListening, setIsListening] = useState(false);
   const [currentQuery, setCurrentQuery] = useState("");
   // Source viewer state
@@ -1248,7 +1250,9 @@ export default function ChatWindow() {
 
       {/* ── Right Panel: hidden on mobile, shown on md+ ── */}
       <div className={`hidden md:flex relative transition-all duration-500 ease-in-out ${
-        sourceViewerExpanded ? 'w-[52%]' : 'w-[360px] lg:w-[400px]'
+        activeSourceMeta
+          ? (sourceViewerExpanded ? 'w-[52%]' : 'w-[360px] lg:w-[400px]')
+          : (graphExpanded ? 'w-[52%]' : 'w-[320px] lg:w-[360px]')
       } border-l border-slate-200 bg-white shadow-2xl flex-col`}>
         {activeSourceMeta ? (
           <>
@@ -1257,7 +1261,7 @@ export default function ChatWindow() {
               className="absolute -left-5 top-1/2 -translate-y-1/2 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-amber-500 to-orange-600 text-white shadow-lg transition-all hover:scale-110 hover:shadow-xl"
               title={sourceViewerExpanded ? "Collapse" : "Expand"}
             >
-              <CaretRight className={`h-5 w-5 transition-transform duration-300 ${sourceViewerExpanded ? 'rotate-180' : ''}`} weight="bold" />
+              <CaretLeft className={`h-5 w-5 transition-transform duration-300 ${!sourceViewerExpanded ? 'rotate-180' : ''}`} weight="bold" />
             </button>
             <SourceViewer
               sourceMeta={activeSourceMeta}
@@ -1267,7 +1271,16 @@ export default function ChatWindow() {
             />
           </>
         ) : (
-          <KnowledgePanel isActive={isLoading} query={currentQuery} />
+          <>
+            <button
+              onClick={() => setGraphExpanded(!graphExpanded)}
+              className="absolute -left-5 top-1/2 -translate-y-1/2 z-50 flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-violet-600 text-white shadow-lg transition-all hover:scale-110 hover:shadow-xl"
+              title={graphExpanded ? "Collapse" : "Expand"}
+            >
+              <CaretLeft className={`h-5 w-5 transition-transform duration-300 ${!graphExpanded ? 'rotate-180' : ''}`} weight="bold" />
+            </button>
+            <KnowledgePanel isActive={isLoading} query={currentQuery} />
+          </>
         )}
       </div>
     </div>
