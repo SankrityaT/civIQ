@@ -193,8 +193,9 @@ def generate_chunk_context(chunk_text: str, section_title: str, doc_name: str) -
             f"Document: {doc_name}\n"
             f"Section: {section_title}\n"
             f"Chunk: {chunk_text[:500]}\n\n"
-            f"Write one short sentence (max 20 words) describing what this chunk covers "
-            f"to improve search retrieval. Answer ONLY with the sentence."
+            f"Write one short sentence (max 20 words) describing what this chunk covers. "
+            f"You MUST include any specific times, numbers, deadlines, or key action verbs mentioned. "
+            f"Answer ONLY with the sentence."
         )
     }], max_tokens=60)
 
@@ -455,7 +456,7 @@ def hybrid_search(query: str, top_k: int = FINAL_TOP_K) -> List[dict]:
     cosine_norm = normalize_scores(cosine_scored)
     all_ids     = set(bm25_norm) | set(cosine_norm)
     fused       = {
-        cid: 0.5 * bm25_norm.get(cid, 0.0) + 0.5 * cosine_norm.get(cid, 0.0)
+        cid: 0.6 * bm25_norm.get(cid, 0.0) + 0.4 * cosine_norm.get(cid, 0.0)
         for cid in all_ids
     }
     sorted_ids = sorted(fused, key=lambda x: -fused[x])
