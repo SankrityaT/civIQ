@@ -77,10 +77,10 @@ export default function Sidebar() {
           <Link href="/chat" className="flex items-center gap-3 group" title="Ask Sam">
             <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-xl shadow-sm ring-2 ring-transparent transition-all group-hover:ring-amber-400/60 group-hover:scale-105">
               <Image
-                src="/logo.jpeg"
-                alt="Ask Sam"
+                src="/logo.png"
+                alt="CivIQ"
                 fill
-                className="object-cover"
+                className="object-contain"
               />
             </div>
             {!collapsed && (
@@ -240,10 +240,10 @@ export default function Sidebar() {
           <div className="flex items-center gap-3">
             <div className="relative h-9 w-9 overflow-hidden rounded-xl shadow-sm">
               <Image
-                src="/logo.jpeg"
-                alt="Civiq Logo"
+                src="/logo.png"
+                alt="CivIQ"
                 fill
-                className="object-cover"
+                className="object-contain"
               />
             </div>
             <span className="font-[family-name:var(--font-playfair)] text-[18px] font-medium tracking-tight text-slate-900">
