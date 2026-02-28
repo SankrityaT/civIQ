@@ -36,7 +36,7 @@ export async function GET() {
   try {
     // Fetch real chunks from sidecar
     const res = await fetch(`${SIDECAR_URL}/chunks`, {
-      signal: AbortSignal.timeout(4000),
+      signal: AbortSignal.timeout(10_000),
     });
 
     if (!res.ok) {

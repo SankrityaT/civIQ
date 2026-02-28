@@ -1,12 +1,15 @@
 const OLLAMA_URL = process.env.OLLAMA_URL ?? "http://127.0.0.1:11434";
-const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "llama3.2:3b-instruct-q4_K_M";
+const OLLAMA_MODEL = process.env.OLLAMA_MODEL ?? "llama3.1:8b-instruct-q4_K_M";
 
 export { OLLAMA_MODEL };
 
 let _ollamaAvailable: boolean | null = null;
+let _ollamaCheckedAt = 0;
 
 export async function isOllamaAvailable(): Promise<boolean> {
-  if (_ollamaAvailable !== null) return _ollamaAvailable;
+  // Recheck every 30s instead of caching forever
+  if (_ollamaAvailable !== null && Date.now() - _ollamaCheckedAt < 30_000) return _ollamaAvailable;
+  _ollamaCheckedAt = Date.now();
   try {
     const res = await fetch(`${OLLAMA_URL}/api/tags`, {
       signal: AbortSignal.timeout(2000),
