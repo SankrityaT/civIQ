@@ -39,7 +39,7 @@ export async function POST(req: NextRequest) {
         start(controller) {
           controller.enqueue(
             encoder.encode(
-              `data: ${JSON.stringify({ content: cached.response, source: cached.source, cached: true, done: true })}\n\n`
+              `data: ${JSON.stringify({ content: cached.response, source: cached.source, sourceMeta: cached.sourceMeta, cached: true, done: true })}\n\n`
             )
           );
           controller.close();
@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Get RAG context from knowledge base
-    const { context: ragContext } = await getRAGContext(message);
+    const { context: ragContext, sourceMeta } = await getRAGContext(message);
     console.log("📚 [API] RAG context length:", ragContext.length);
 
     // Streaming response via Groq
@@ -112,8 +112,10 @@ export async function POST(req: NextRequest) {
           const sourceMatch = fullContent.match(/📄 Source:\s*(.+)$/m);
           const source = sourceMatch?.[1]?.trim() ?? "Poll Worker Training Manual 2026";
           console.log("📄 [API] Extracted source:", source);
+          // Keep sourceMeta in retrieval-rank order.
+          // LLM-cited section text can drift from retrieved evidence and lead to wrong PDF pages.
 
-          setCachedResponse(message, fullContent, source);
+          setCachedResponse(message, fullContent, source, sourceMeta);
           logInteraction({
             userType: "poll_worker",
             question: message,
@@ -124,7 +126,7 @@ export async function POST(req: NextRequest) {
           });
 
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true })}\n\n`)
+            encoder.encode(`data: ${JSON.stringify({ source, cached: false, done: true, sourceMeta })}\n\n`)
           );
           controller.close();
           console.log("🏁 [API] Response stream closed successfully");

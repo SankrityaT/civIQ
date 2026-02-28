@@ -1,6 +1,6 @@
 // Created by Sankritya on Feb 27, 2026
 // Knowledge Base: Document ingestion, chunking, and in-memory vector store
-// Designed to be model-agnostic — any embedding provider can plug in
+// Pipeline: sliding-window chunks → BM25 + cosine hybrid retrieval via RRF
 
 import { TrainingDocument } from "@/types";
 
@@ -11,9 +11,12 @@ export interface KBChunk {
   documentId: string;
   documentName: string;
   sectionTitle: string;
-  content: string;
+  content: string;         // contextual content (section title prepended)
+  rawContent: string;      // original chunk text without prepended context
   embedding: number[];
   metadata: Record<string, string>;
+  pageNumber?: number;
+  sectionIndex?: number;
 }
 
 export interface KBSearchResult {
@@ -27,52 +30,57 @@ export interface EmbeddingProvider {
   dimensions: number;
 }
 
-// ─── Simple TF-IDF-like Embedding (no external deps) ───────────────────────
-// This is a lightweight local embedding that works without any API calls.
-// Swap this out for OpenAI, Cohere, HuggingFace, or local sentence-transformers.
+// ─── Tokenization & Stop Words ──────────────────────────────────────────────
 
-const VOCAB_SIZE = 384;
-
-function hashToken(token: string): number {
-  let h = 0;
-  for (let i = 0; i < token.length; i++) {
-    h = ((h << 5) - h + token.charCodeAt(i)) | 0;
-  }
-  return Math.abs(h) % VOCAB_SIZE;
-}
+const STOP_WORDS = new Set([
+  "the", "and", "for", "are", "but", "not", "you", "all", "any", "can",
+  "had", "her", "was", "one", "our", "out", "day", "get", "has", "him",
+  "his", "how", "its", "may", "new", "now", "old", "see", "two", "who",
+  "did", "use", "way", "she", "each", "which", "their", "time", "will",
+  "with", "have", "this", "that", "from", "they", "been", "said", "what",
+  "when", "make", "like", "into", "than", "then", "more", "also", "some",
+  "would", "there", "could", "other", "after", "first", "well", "should",
+  "about", "over", "such", "even", "most", "made", "before", "must",
+]);
 
 function tokenize(text: string): string[] {
   return text
     .toLowerCase()
     .replace(/[^a-z0-9\s]/g, " ")
     .split(/\s+/)
-    .filter((t) => t.length > 1);
+    .filter((t) => t.length > 2 && !STOP_WORDS.has(t));
+}
+
+// ─── Local Embedding (hash-based, used as secondary signal only) ─────────────
+
+const VOCAB_SIZE = 512;
+
+function hashToken(token: string): number {
+  let h = 5381;
+  for (let i = 0; i < token.length; i++) {
+    h = ((h << 5) + h + token.charCodeAt(i)) | 0;
+  }
+  return Math.abs(h) % VOCAB_SIZE;
 }
 
 function localEmbed(text: string): number[] {
   const vec = new Array(VOCAB_SIZE).fill(0);
   const tokens = tokenize(text);
-  // Bigrams for better semantic capture
-  const grams: string[] = [...tokens];
-  for (let i = 0; i < tokens.length - 1; i++) {
-    grams.push(`${tokens[i]}_${tokens[i + 1]}`);
+  // Unigrams + bigrams
+  for (let i = 0; i < tokens.length; i++) {
+    vec[hashToken(tokens[i])] += 1;
+    if (i < tokens.length - 1) {
+      vec[hashToken(`${tokens[i]}_${tokens[i + 1]}`)] += 0.5;
+    }
   }
-  for (const gram of grams) {
-    vec[hashToken(gram)] += 1;
-  }
-  // L2 normalize
   const norm = Math.sqrt(vec.reduce((s, v) => s + v * v, 0)) || 1;
   return vec.map((v) => v / norm);
 }
 
 export class LocalEmbeddingProvider implements EmbeddingProvider {
   dimensions = VOCAB_SIZE;
-  async embed(text: string): Promise<number[]> {
-    return localEmbed(text);
-  }
-  async embedBatch(texts: string[]): Promise<number[][]> {
-    return texts.map(localEmbed);
-  }
+  async embed(text: string): Promise<number[]> { return localEmbed(text); }
+  async embedBatch(texts: string[]): Promise<number[][]> { return texts.map(localEmbed); }
 }
 
 // ─── Cosine Similarity ──────────────────────────────────────────────────────
@@ -85,6 +93,79 @@ function cosineSimilarity(a: number[], b: number[]): number {
     normB += b[i] * b[i];
   }
   return dot / (Math.sqrt(normA) * Math.sqrt(normB) || 1);
+}
+
+// ─── BM25 Index ──────────────────────────────────────────────────────────────
+// Full BM25 (Okapi) implementation — proper IDF, no hash collisions
+
+const BM25_K1 = 1.5;  // term frequency saturation
+const BM25_B  = 0.75; // length normalization
+
+class BM25Index {
+  private df: Map<string, number> = new Map();   // doc frequency per term
+  private tf: Map<string, Map<string, number>> = new Map(); // chunkId -> term -> tf
+  private chunkLengths: Map<string, number> = new Map();
+  private avgLen = 0;
+  private N = 0;
+
+  addChunk(chunkId: string, tokens: string[]): void {
+    this.chunkLengths.set(chunkId, tokens.length);
+    const termFreqs = new Map<string, number>();
+    for (const t of tokens) {
+      termFreqs.set(t, (termFreqs.get(t) ?? 0) + 1);
+    }
+    this.tf.set(chunkId, termFreqs);
+    for (const term of termFreqs.keys()) {
+      this.df.set(term, (this.df.get(term) ?? 0) + 1);
+    }
+    this.N++;
+  }
+
+  finalize(): void {
+    const total = [...this.chunkLengths.values()].reduce((s, v) => s + v, 0);
+    this.avgLen = this.N > 0 ? total / this.N : 1;
+  }
+
+  score(chunkId: string, queryTokens: string[]): number {
+    const termFreqs = this.tf.get(chunkId);
+    if (!termFreqs) return 0;
+    const dl = this.chunkLengths.get(chunkId) ?? this.avgLen;
+    let score = 0;
+    for (const term of queryTokens) {
+      const tf = termFreqs.get(term) ?? 0;
+      if (tf === 0) continue;
+      const df = this.df.get(term) ?? 0;
+      if (df === 0) continue;
+      const idf = Math.log((this.N - df + 0.5) / (df + 0.5) + 1);
+      const tfNorm = (tf * (BM25_K1 + 1)) / (tf + BM25_K1 * (1 - BM25_B + BM25_B * (dl / this.avgLen)));
+      score += idf * tfNorm;
+    }
+    return score;
+  }
+
+  clear(): void {
+    this.df.clear();
+    this.tf.clear();
+    this.chunkLengths.clear();
+    this.N = 0;
+    this.avgLen = 0;
+  }
+}
+
+// ─── Reciprocal Rank Fusion ───────────────────────────────────────────────────
+
+function reciprocalRankFusion(
+  rankedLists: Array<Array<{ id: string; score: number }>>,
+  k = 60
+): Map<string, number> {
+  const fused = new Map<string, number>();
+  for (const list of rankedLists) {
+    const sorted = [...list].sort((a, b) => b.score - a.score);
+    sorted.forEach((item, rank) => {
+      fused.set(item.id, (fused.get(item.id) ?? 0) + 1 / (k + rank + 1));
+    });
+  }
+  return fused;
 }
 
 // ─── Knowledge Graph Node ───────────────────────────────────────────────────
@@ -107,6 +188,7 @@ export interface KGEdge {
 
 class KnowledgeBaseStore {
   private chunks: KBChunk[] = [];
+  private bm25: BM25Index = new BM25Index();
   private nodes: Map<string, KGNode> = new Map();
   private edges: KGEdge[] = [];
   private provider: EmbeddingProvider;
@@ -116,125 +198,126 @@ class KnowledgeBaseStore {
     this.provider = provider ?? new LocalEmbeddingProvider();
   }
 
-  setProvider(provider: EmbeddingProvider) {
-    this.provider = provider;
-  }
-
-  getProvider(): EmbeddingProvider {
-    return this.provider;
-  }
+  setProvider(provider: EmbeddingProvider) { this.provider = provider; }
+  getProvider(): EmbeddingProvider { return this.provider; }
 
   // ─── Document Ingestion ─────────────────────────────────────────────
+  // Accepts pre-parsed pages: { pageNum, text }[]
+  // Produces sliding-window chunks with exact page provenance
 
-  async ingestDocument(doc: TrainingDocument, sections: { title: string; content: string }[]): Promise<number> {
-    // Add document node to knowledge graph
-    const docNode: KGNode = {
+  async ingestDocument(
+    doc: TrainingDocument,
+    sections: { title: string; content: string; pageStart?: number; pageEnd?: number }[]
+  ): Promise<number> {
+    this.bm25.clear();
+
+    // Document node
+    this.nodes.set(doc.id, {
       id: doc.id,
       label: doc.name,
       type: "document",
       metadata: { status: doc.status, wordCount: String(doc.wordCount) },
-    };
-    this.nodes.set(doc.id, docNode);
+    });
 
+    // Sliding window chunking per section — chunks NEVER cross page boundaries.
+    // Each section = one page (pageStart == pageEnd from the PDF parser).
+    // Window: 150 words, 30 word overlap.
+    const CHUNK_SIZE = 150;
+    const OVERLAP = 30;
     let chunksAdded = 0;
 
-    for (const section of sections) {
-      // Chunk each section (split large sections into ~200 word chunks)
-      const sectionChunks = this.chunkText(section.content, 200);
-      const sectionNodeId = `${doc.id}:${section.title}`;
+    for (let sIdx = 0; sIdx < sections.length; sIdx++) {
+      const sec = sections[sIdx];
+      const page = sec.pageStart ?? 1;
+      const words = sec.content.split(/\s+/).filter(Boolean);
 
-      // Add section node
+      // Knowledge graph: section node + concepts
+      const sectionNodeId = `${doc.id}:${sec.title}`;
       this.nodes.set(sectionNodeId, {
-        id: sectionNodeId,
-        label: section.title,
-        type: "section",
-        metadata: { documentId: doc.id },
+        id: sectionNodeId, label: sec.title, type: "section",
+        metadata: { documentId: doc.id, page: String(page) },
       });
-
-      // Edge: document -> section
-      this.edges.push({
-        from: doc.id,
-        to: sectionNodeId,
-        relation: "contains",
-        weight: 1.0,
-      });
-
-      // Extract concepts and create concept nodes
-      const concepts = this.extractConcepts(section.content);
-      for (const concept of concepts) {
-        const conceptId = `concept:${concept}`;
-        if (!this.nodes.has(conceptId)) {
-          this.nodes.set(conceptId, {
-            id: conceptId,
-            label: concept,
-            type: "concept",
-            metadata: {},
-          });
+      this.edges.push({ from: doc.id, to: sectionNodeId, relation: "contains", weight: 1.0 });
+      for (const concept of this.extractConcepts(sec.content)) {
+        const cid = `concept:${concept}`;
+        if (!this.nodes.has(cid)) {
+          this.nodes.set(cid, { id: cid, label: concept, type: "concept", metadata: {} });
         }
-        // Edge: section -> concept
-        this.edges.push({
-          from: sectionNodeId,
-          to: conceptId,
-          relation: "covers",
-          weight: 0.8,
-        });
+        this.edges.push({ from: sectionNodeId, to: cid, relation: "covers", weight: 0.8 });
       }
 
-      // Embed and store chunks
-      const texts = sectionChunks.map((c) => c);
-      const embeddings = await this.provider.embedBatch(texts);
+      // Skip pages too short to produce useful chunks (single-sentence stubs)
+      if (words.length < 40) continue;
 
-      for (let i = 0; i < sectionChunks.length; i++) {
+      // Slide window within this section only
+      const step = Math.max(1, CHUNK_SIZE - OVERLAP);
+      for (let start = 0; start < words.length; start += step) {
+        const slice = words.slice(start, start + CHUNK_SIZE);
+        if (slice.length < 15) break;
+
+        const rawContent = slice.join(" ");
+        // Contextual content: prepend section title (Anthropic contextual retrieval)
+        const contextualContent = `[${sec.title}] ${rawContent}`;
+
+        const chunkId = `${doc.id}:chunk-${chunksAdded}`;
+        const embedding = await this.provider.embed(contextualContent);
+        const bm25Tokens = tokenize(contextualContent);
+
         const chunk: KBChunk = {
-          id: `${doc.id}:${section.title}:chunk-${i}`,
+          id: chunkId,
           documentId: doc.id,
           documentName: doc.name,
-          sectionTitle: section.title,
-          content: sectionChunks[i],
-          embedding: embeddings[i],
-          metadata: {
-            chunkIndex: String(i),
-            totalChunks: String(sectionChunks.length),
-          },
+          sectionTitle: sec.title,
+          content: contextualContent,
+          rawContent,
+          embedding,
+          metadata: { chunkIndex: String(chunksAdded) },
+          pageNumber: page,
+          sectionIndex: sIdx,
         };
+
         this.chunks.push(chunk);
+        this.bm25.addChunk(chunkId, bm25Tokens);
         chunksAdded++;
       }
     }
 
+    this.bm25.finalize();
     return chunksAdded;
   }
 
-  // ─── Semantic Search ────────────────────────────────────────────────
+  // ─── Hybrid Search: BM25 + Cosine via Reciprocal Rank Fusion ────────
 
-  async search(query: string, topK = 5, minScore = 0.1): Promise<KBSearchResult[]> {
+  async search(query: string, topK = 5, minScore = 0.0): Promise<KBSearchResult[]> {
     if (this.chunks.length === 0) return [];
 
+    const queryTokens = tokenize(query);
     const queryEmbedding = await this.provider.embed(query);
 
-    const scored = this.chunks.map((chunk) => ({
-      chunk,
+    // --- BM25 scores ---
+    const bm25Scores = this.chunks.map((chunk) => ({
+      id: chunk.id,
+      score: this.bm25.score(chunk.id, queryTokens),
+    }));
+
+    // --- Cosine scores ---
+    const cosineScores = this.chunks.map((chunk) => ({
+      id: chunk.id,
       score: cosineSimilarity(queryEmbedding, chunk.embedding),
     }));
 
-    // Also boost scores based on knowledge graph connections
-    const queryTokens = tokenize(query);
-    for (const result of scored) {
-      const sectionNodeId = `${result.chunk.documentId}:${result.chunk.sectionTitle}`;
-      const connectedConcepts = this.edges
-        .filter((e) => e.from === sectionNodeId && e.relation === "covers")
-        .map((e) => this.nodes.get(e.to))
-        .filter(Boolean);
+    // --- RRF fusion (BM25 weighted 2x over cosine) ---
+    const fused = reciprocalRankFusion([bm25Scores, bm25Scores, cosineScores]);
 
-      for (const concept of connectedConcepts) {
-        if (concept && queryTokens.some((t) => concept.label.includes(t))) {
-          result.score += 0.1; // Boost for concept match
-        }
-      }
+    // Map back to chunks
+    const chunkMap = new Map(this.chunks.map((c) => [c.id, c]));
+    const results: KBSearchResult[] = [];
+    for (const [id, score] of fused.entries()) {
+      const chunk = chunkMap.get(id);
+      if (chunk) results.push({ chunk, score });
     }
 
-    return scored
-      .filter((r) => r.score >= minScore)
+    return results
       .sort((a, b) => b.score - a.score)
       .slice(0, topK);
   }
@@ -286,27 +369,6 @@ class KnowledgeBaseStore {
 
   // ─── Internal Helpers ───────────────────────────────────────────────
 
-  private chunkText(text: string, maxWords: number): string[] {
-    const sentences = text.split(/(?<=[.!?])\s+/);
-    const chunks: string[] = [];
-    let current = "";
-    let wordCount = 0;
-
-    for (const sentence of sentences) {
-      const words = sentence.split(/\s+/).length;
-      if (wordCount + words > maxWords && current) {
-        chunks.push(current.trim());
-        current = sentence;
-        wordCount = words;
-      } else {
-        current += (current ? " " : "") + sentence;
-        wordCount += words;
-      }
-    }
-    if (current.trim()) chunks.push(current.trim());
-    return chunks.length > 0 ? chunks : [text];
-  }
-
   private extractConcepts(text: string): string[] {
     const conceptPatterns = [
       "voter id", "provisional ballot", "poll book", "check-in",
@@ -319,6 +381,20 @@ class KnowledgeBaseStore {
     ];
     const lower = text.toLowerCase();
     return conceptPatterns.filter((p) => lower.includes(p));
+  }
+
+  getSectionTitles(): string[] {
+    return [...this.nodes.values()]
+      .filter((n) => n.type === "section")
+      .map((n) => n.label);
+  }
+
+  getStats() {
+    return {
+      chunks: this.chunks.length,
+      nodes: this.nodes.size,
+      edges: this.edges.length,
+    };
   }
 }
 
@@ -333,98 +409,7 @@ export function getKnowledgeBase(): KnowledgeBaseStore {
   return instance;
 }
 
-// ─── Fake Document Content for Ingestion ────────────────────────────────────
-
-export const FAKE_DOCUMENTS: {
-  docId: string;
-  docName: string;
-  sections: { title: string; content: string }[];
-}[] = [
-  {
-    docId: "doc-001",
-    docName: "Poll Worker Training Manual 2026",
-    sections: [
-      {
-        title: "Opening the Polls",
-        content: "Poll workers must arrive at the polling location by 5:30 AM. Begin setup procedures including: powering on all voting machines, verifying ballot supplies, posting required signage, and testing the accessible voting unit (AVU). The polling location must be ready for voters by 6:00 AM. Ensure the American flag is properly displayed. Verify that all required forms are available: provisional ballot affidavits, incident report forms, and voter registration forms. Test the electronic poll book by looking up a test voter record. Confirm the emergency supply kit is present and complete."
-      },
-      {
-        title: "Voter Check-In Procedures",
-        content: "When a voter arrives: 1) Greet the voter warmly. 2) Ask for their name and address. 3) Look up the voter in the electronic poll book. 4) Verify identification per state requirements. 5) Have the voter sign the poll book. 6) Issue the correct ballot style for their precinct. If a voter's name is not found, offer a provisional ballot and explain the process clearly. Never turn away a voter without offering a provisional ballot. If the poll book system is down, use the emergency paper roster backup and contact the Election Day hotline."
-      },
-      {
-        title: "Voter ID Requirements",
-        content: "Acceptable forms of ID include: valid Arizona driver's license, Arizona nonoperating identification license, tribal enrollment card, or any two of the following: utility bill dated within 90 days, bank statement, government-issued check, paycheck, or any other government document showing name and address. If a voter presents expired ID, they may still vote a provisional ballot. If a voter has no ID at all, they must vote a provisional ballot and can provide ID to the county recorder within 5 business days after the election."
-      },
-      {
-        title: "Provisional Ballots",
-        content: "A provisional ballot must be offered when: the voter's name does not appear in the poll book, the voter does not have acceptable ID, or there is a question about the voter's eligibility. The voter completes a provisional ballot affidavit with their name, address, date of birth, and signature. Seal the provisional ballot in the green envelope. Record the provisional ballot number in the provisional ballot log. Give the voter the receipt portion of the envelope so they can track their ballot status online. Provisional ballots are reviewed and counted at the central counting facility."
-      },
-      {
-        title: "Accessible Voting",
-        content: "Every polling location must have at least one accessible voting unit (AVU). Poll workers should be prepared to assist voters with disabilities without being condescending. Offer the AVU to any voter who requests it. The AVU includes audio ballot capability for visually impaired voters, sip-and-puff device support for voters with mobility impairments, large print display options, and a tactile keypad. Never assume a voter does or does not need assistance. If a voter needs physical help marking their ballot, they may choose anyone to assist them except their employer or union representative."
-      },
-      {
-        title: "Closing the Polls",
-        content: "At 7:00 PM, announce that the polls are closing. Any voter in line at 7:00 PM must be allowed to vote — do not allow anyone to join the line after 7:00 PM. After the last voter has voted: 1) Shut down all voting machines per the posted procedure. 2) Reconcile the number of voters checked in with ballots cast. 3) Seal all ballots in the designated tamper-evident containers. 4) Complete all required paperwork including the poll closing report. 5) Transport all materials to the central counting facility using the designated route. Two workers must accompany the materials at all times."
-      },
-      {
-        title: "Emergency Procedures",
-        content: "In case of power outage: immediately switch to emergency ballots (paper ballots in the emergency supply kit). Document the time of the outage. In case of equipment malfunction: call the Election Day hotline immediately at (555) 123-4567 and use backup equipment if available. In case of a security threat: call 911 first, then the Election Day hotline. Evacuate voters if necessary and do not resume voting until law enforcement gives the all-clear. Document all incidents on the Incident Report Form with time, description, and actions taken."
-      },
-      {
-        title: "Electioneering Rules",
-        content: "No campaign materials, signs, buttons, stickers, or apparel are permitted within 75 feet of the polling location entrance. This includes clothing with candidate names, party logos, or ballot measure slogans. If a voter is wearing campaign apparel, they must still be allowed to vote — do not turn them away or ask them to remove the item. If someone is electioneering within the restricted zone, politely ask them to move beyond the 75-foot boundary. If they refuse, contact the Election Day hotline. Poll workers themselves must not wear any political material while serving."
-      },
-    ],
-  },
-  {
-    docId: "doc-002",
-    docName: "Election Day Procedures Guide",
-    sections: [
-      {
-        title: "Pre-Election Preparation",
-        content: "All poll workers must complete the mandatory 4-hour training session no more than 30 days before the election. Training covers equipment operation, voter check-in procedures, handling special situations, and ADA compliance. Poll workers receive their precinct assignment and shift schedule at least 7 days before the election. Review the poll worker handbook and bring it on election day. Confirm your transportation to the polling site. Pack comfortable shoes — you will be on your feet for 14+ hours."
-      },
-      {
-        title: "Equipment Setup Guide",
-        content: "Each polling location receives a sealed equipment kit delivered the day before the election. On election morning: 1) Break the seal and verify all contents against the inventory checklist. 2) Set up voting booths with privacy screens. 3) Power on the ballot tabulator and run the zero tape to confirm no votes are pre-loaded. 4) Set up the accessible voting unit in a location with wheelchair access. 5) Power on the electronic poll book and verify network connectivity. 6) Set up the ballot-on-demand printer if applicable. Report any missing or damaged equipment immediately."
-      },
-      {
-        title: "Handling Disruptions",
-        content: "Common disruptions include: long lines (deploy additional check-in stations), printer jams (use backup ballots), network outages (switch to offline mode on poll books), voter disputes (remain calm, call supervisor). For extended power outages lasting more than 30 minutes, contact the county elections office for guidance on whether to relocate. Keep voters informed of wait times. Offer water to voters in line during extreme heat. If media representatives arrive, they may observe but cannot interview voters inside the polling place or photograph marked ballots."
-      },
-      {
-        title: "Chain of Custody",
-        content: "Maintaining ballot chain of custody is critical for election integrity. All ballot containers must be sealed with tamper-evident seals. Record seal numbers on the chain of custody form. When transporting ballots: two bipartisan workers must accompany the materials, drive directly to the counting facility without stops, and call ahead to confirm arrival. At the counting facility, verify that seal numbers match the form. Any broken seals must be reported immediately. The chain of custody log is a legal document — keep it complete and accurate."
-      },
-      {
-        title: "Post-Election Procedures",
-        content: "After polls close and results are transmitted: 1) Print the results tape from each tabulator. 2) Post one copy of the results tape on the door of the polling location for public viewing. 3) Power down all equipment in the prescribed order. 4) Return all materials to the counting facility. 5) Complete the post-election incident report. 6) Return your poll worker badge and collect your payment voucher. Payment is processed within 2-4 weeks after the election. Thank you for serving your community!"
-      },
-    ],
-  },
-  {
-    docId: "doc-003",
-    docName: "Voter ID Requirements by State",
-    sections: [
-      {
-        title: "Arizona ID Requirements",
-        content: "Arizona is a voter ID state. Voters must present one form of photo ID (driver's license, state ID, tribal ID, federal ID) or two forms of non-photo ID (utility bill, bank statement, vehicle registration, government check). If the voter's name or address on the ID does not match the poll book exactly, they may still vote if the poll worker can reasonably determine they are the same person. Minor variations in name spelling or address formatting should not prevent a voter from casting a regular ballot."
-      },
-      {
-        title: "Federal ID Requirements",
-        content: "Under the Help America Vote Act (HAVA), first-time voters who registered by mail and did not provide ID verification must show ID at the polls. Acceptable federal documents include: current and valid photo ID, or a current utility bill, bank statement, government check, paycheck, or government document showing name and address. Military and overseas voters may have different ID requirements under UOCAVA. Contact the county recorder for specific guidance on military voter ID questions."
-      },
-      {
-        title: "Handling ID Issues",
-        content: "Common ID issues at the polls: expired ID (allow regular ballot if ID expired within 2 years in Arizona), name change due to marriage (verify with additional documentation), no ID at all (issue provisional ballot), damaged or unreadable ID (use additional forms of verification). Never confiscate a voter's ID. Never photocopy a voter's ID. If you suspect a fraudulent ID, do not confront the voter — note the incident on the report form and allow them to vote provisionally. Contact the Election Day hotline for guidance."
-      },
-    ],
-  },
-];
-
-// ─── Auto-Ingest on First Access ────────────────────────────────────────────
+// ─── Auto-Ingest Real PDF on First Access ───────────────────────────────────
 
 let ingested = false;
 
@@ -433,18 +418,109 @@ export async function ensureKnowledgeBaseIngested(): Promise<void> {
   ingested = true;
 
   const kb = getKnowledgeBase();
-  for (const fakeDoc of FAKE_DOCUMENTS) {
+
+  try {
+    // Dynamically import unpdf (server-only)
+    const { getDocumentProxy } = await import("unpdf");
+    const fs = await import("fs");
+    const path = await import("path");
+
+    const pdfPath = path.join(process.cwd(), "public", "poll_worker_training_manual.pdf");
+    if (!fs.existsSync(pdfPath)) {
+      console.warn("⚠️ PDF not found at", pdfPath, "— knowledge base will be empty");
+      return;
+    }
+
+    console.log("📄 Parsing real PDF for knowledge base:", pdfPath);
+    const pdfBuffer = fs.readFileSync(pdfPath);
+    const pdf = await getDocumentProxy(new Uint8Array(pdfBuffer));
+    const totalPages = pdf.numPages;
+
+    // Extract text per page
+    const pageTexts: { pageNum: number; text: string }[] = [];
+    for (let pageNum = 1; pageNum <= totalPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const tc = await page.getTextContent();
+      const text = tc.items
+        .map((item: Record<string, unknown>) => (item as { str: string }).str)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      pageTexts.push({ pageNum, text });
+    }
+
+    // Build per-page sections — guarantees each chunk has the exact correct page number.
+    // Heading detection: capture the N.N or Section N: prefix plus the next 3-5 content words.
+    // We stop at words that are clearly NOT heading words (single letters, "What", "How", etc.)
+    const HEADING_STOP = new Set(["A", "An", "In", "To", "And", "Or", "For", "With", "By",
+      "Do", "Does", "Is", "Are", "Was", "Were", "Be", "At", "Of", "On", "Up"]);
+
+    // Table column headers that signal end of title
+    const TABLE_HEADERS = new Set(["Issue", "What", "How", "Do", "Does", "Action", "Step"]);
+
+    function extractTitle(prefix: string, rest: string): string {
+      const words = rest.trim().split(/\s+/);
+      const titleWords: string[] = [];
+      const seen = new Set<string>();
+      for (const w of words) {
+        if (titleWords.length >= 6) break;
+        if (HEADING_STOP.has(w) && titleWords.length >= 2) break;
+        if (/^\d/.test(w)) break;
+        // Detect table header patterns: repeated cap words or known column headers after >=2 title words
+        const wLower = w.toLowerCase();
+        if (TABLE_HEADERS.has(w) && titleWords.length >= 2) break;
+        if (seen.has(wLower) && titleWords.length >= 2) break; // duplicate word = table
+        seen.add(wLower);
+        titleWords.push(w);
+      }
+      return (prefix + " " + titleWords.join(" ")).replace(/\s+/g, " ").trim();
+    }
+
+    // Match the numeric prefix, then capture remaining text for title extraction
+    const subsectionRe = /\b(\d+\.\d+(?:\.\d+)?)\s+([A-Z].+)/;
+    const sectionRe    = /\b(Section\s+\d+\s*[:\-–]?)\s+([A-Z].+)/;
+
+    function detectHeading(text: string): string | null {
+      const sub = text.match(subsectionRe);
+      if (sub) return extractTitle(sub[1], sub[2]);
+      const sec = text.match(sectionRe);
+      if (sec) return extractTitle(sec[1], sec[2]);
+      return null;
+    }
+
+    const sections: { title: string; content: string; pageStart: number; pageEnd: number }[] = [];
+
+    let lastTitle = "Introduction";
+    for (const p of pageTexts) {
+      if (p.text.trim().length < 30) continue;
+      const detected = detectHeading(p.text);
+      if (detected) lastTitle = detected;
+      sections.push({ title: lastTitle, content: p.text, pageStart: p.pageNum, pageEnd: p.pageNum });
+    }
+
+    const totalWords = sections.reduce((sum, s) => sum + s.content.split(/\s+/).length, 0);
+    console.log(`✅ Extracted ${sections.length} page-sections (${totalWords} words) from ${totalPages} pages`);
+    for (const s of sections) {
+      console.log(`  📖 "${s.title}" → page ${s.pageStart} (${s.content.split(/\s+/).length} words)`);
+    }
+
     await kb.ingestDocument(
       {
-        id: fakeDoc.docId,
-        name: fakeDoc.docName,
+        id: "doc-001",
+        name: "Poll Worker Training Manual 2026",
         status: "active",
-        wordCount: fakeDoc.sections.reduce((sum, s) => sum + s.content.split(/\s+/).length, 0),
-        sections: fakeDoc.sections.length,
+        wordCount: totalWords,
+        sections: sections.length,
         uploadedAt: "2026-01-15T09:00:00Z",
-        lastUpdated: "2026-02-01T14:30:00Z",
+        lastUpdated: new Date().toISOString(),
       },
-      fakeDoc.sections
+      sections
     );
+
+    const stats = kb.getStats();
+    console.log(`🧠 Knowledge base ready — ${stats.chunks} chunks, ${stats.nodes} nodes, ${stats.edges} edges`);
+  } catch (error) {
+    console.error("❌ Failed to ingest PDF:", error);
+    ingested = false; // Allow retry
   }
 }

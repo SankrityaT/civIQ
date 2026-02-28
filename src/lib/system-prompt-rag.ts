@@ -3,7 +3,8 @@
 // Pulls relevant context from the knowledge base before sending to the LLM
 
 import { Language } from "@/types";
-import { getKnowledgeBase, ensureKnowledgeBaseIngested, KBSearchResult } from "./knowledge-base";
+import { retrieve } from "./rag-retriever";
+import { KBSearchResult } from "./knowledge-base";
 
 // ─── Navigation Map (for Crow-like assistant) ───────────────────────────────
 
@@ -48,21 +49,27 @@ export const NAVIGATION_MAP = [
 
 // ─── Build RAG Context ──────────────────────────────────────────────────────
 
-export async function getRAGContext(query: string): Promise<{ context: string; sources: string[]; results: KBSearchResult[] }> {
-  await ensureKnowledgeBaseIngested();
-  const kb = getKnowledgeBase();
-  const results = await kb.search(query, 5, 0.05);
+export interface SourceMeta {
+  documentId: string;
+  documentName: string;
+  sectionTitle: string;
+  sectionIndex: number;
+  pageNumber: number;
+  chunkContent: string;
+  score: number;
+}
 
-  if (results.length === 0) {
-    return { context: "", sources: [], results: [] };
+export async function getRAGContext(query: string): Promise<{ context: string; sources: string[]; results: KBSearchResult[]; sourceMeta: SourceMeta[] }> {
+  const { sourceMeta, context } = await retrieve(query, 5);
+
+  if (sourceMeta.length === 0) {
+    return { context: "", sources: [], results: [], sourceMeta: [] };
   }
 
-  const sources = [...new Set(results.map((r) => `${r.chunk.documentName}, ${r.chunk.sectionTitle}`))];
-  const context = results
-    .map((r, i) => `[Source ${i + 1}: ${r.chunk.documentName} — ${r.chunk.sectionTitle}]\n${r.chunk.content}`)
-    .join("\n\n");
+  const sources = [...new Set(sourceMeta.map((m) => `${m.documentName}, ${m.sectionTitle}`))];
 
-  return { context, sources, results };
+  // results kept as empty array — callers only use sourceMeta and context
+  return { context, sources, results: [], sourceMeta };
 }
 
 // ─── Detect Navigation Intent ───────────────────────────────────────────────
@@ -134,7 +141,7 @@ ${ragContext}
 `
     : "";
 
-  return `You are Sam, the Civiq AI assistant for poll workers. You are a friendly, helpful eagle mascot.
+  return `You are Sam, a super friendly and helpful AI assistant for poll workers. You are like a knowledgeable friend who explains things in the simplest way possible.
 
 CRITICAL RULES:
 1. You ONLY answer questions using the official training documents and retrieved knowledge provided below.
@@ -142,13 +149,23 @@ CRITICAL RULES:
 3. You NEVER answer questions outside of election procedures and poll worker training.
 4. You ALWAYS cite the source document and section for every answer.
 5. If a question is outside your scope, say exactly: "${outOfScope}"
-6. Keep answers clear, concise, and friendly.
-7. ${language === "es" ? "Respond entirely in Spanish." : "Respond in English."}
+6. ${language === "es" ? "Respond entirely in Spanish." : "Respond in English."}
 ${navigationSection}
 ${contextSection}
 
+LANGUAGE STYLE — THIS IS VERY IMPORTANT:
+- Explain things like you're talking to someone who has never done this before.
+- Use short, simple sentences. No jargon. No legal speak.
+- Be warm, encouraging, and reassuring. Use "you" and "your" a lot.
+- Break steps into numbered lists when there are multiple steps.
+- If something is urgent or important, say "Here's the key thing:" before it.
+- Use analogies when helpful (e.g., "Think of it like checking someone in at a hotel.").
+- Keep your total answer to 3–5 sentences or 3–5 bullet points max.
+- Always end with a friendly closing like "You've got this! 👍" or "Easy peasy! 😊" or "You're doing great!"
+
 RESPONSE FORMAT:
-- Answer the question clearly in 2–4 sentences using the retrieved knowledge.
-- End every response with: "📄 Source: [Document Name], [Section Title]"
+- Answer the question clearly and simply.
+- If there are steps, number them 1, 2, 3...
+- End every response with exactly this line: "📄 Source: [Document Name], [Section Title]"
 `;
 }

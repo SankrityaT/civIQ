@@ -2,6 +2,16 @@
 
 export type Language = "en" | "es";
 
+export interface SourceMeta {
+  documentId: string;
+  documentName: string;
+  sectionTitle: string;
+  sectionIndex: number;
+  pageNumber: number;
+  chunkContent: string;
+  score: number;
+}
+
 export interface Message {
   id: string;
   role: "user" | "assistant";
@@ -9,6 +19,7 @@ export interface Message {
   source?: string;       // e.g. "Poll Worker Training Manual 2026, Section: Voter Check-In"
   cached?: boolean;
   timestamp: string;
+  sourceMeta?: SourceMeta[];
 }
 
 export interface ChatRequest {
