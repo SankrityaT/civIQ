@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGroqClient } from "@/lib/groq";
-import { buildSystemPrompt } from "@/lib/system-prompt";
+import { getRAGContext, buildRAGSystemPrompt, detectNavigationIntent } from "@/lib/system-prompt-rag";
 import { getCachedResponse, setCachedResponse } from "@/lib/response-cache";
 import { logInteraction } from "@/lib/audit-logger";
 import { ChatRequest } from "@/types";
@@ -54,6 +54,16 @@ export async function POST(req: NextRequest) {
     console.log("🔑 [API] GROQ_API_KEY exists:", !!process.env.GROQ_API_KEY);
     console.log("🤖 [API] Model:", GROQ_MODEL);
 
+    // Check for navigation intent
+    const navIntent = detectNavigationIntent(message);
+    if (navIntent) {
+      console.log("🧭 [API] Navigation intent detected:", navIntent.path);
+    }
+
+    // Get RAG context from knowledge base
+    const { context: ragContext } = await getRAGContext(message);
+    console.log("📚 [API] RAG context length:", ragContext.length);
+
     // Streaming response via Groq
     const groq = getGroqClient();
     console.log("🔧 [API] Groq client initialized");
@@ -61,7 +71,7 @@ export async function POST(req: NextRequest) {
     const groqStream = await groq.chat.completions.create({
       model: GROQ_MODEL,
       messages: [
-        { role: "system", content: buildSystemPrompt(language) },
+        { role: "system", content: buildRAGSystemPrompt(language, ragContext, true) },
         ...conversationHistory.map((m) => ({
           role: m.role as "user" | "assistant",
           content: m.content,

@@ -12,7 +12,7 @@ export default function DocumentsPage() {
   const totalSections = documents.reduce((sum, d) => sum + d.sections, 0);
 
   return (
-    <div className="space-y-7">
+    <div className="space-y-7 pt-8">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>

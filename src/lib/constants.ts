@@ -42,9 +42,8 @@ export const GROQ_MODEL  = "llama-3.3-70b-versatile";
 export const DASHBOARD_NAV = [
   { label: "Overview",   href: "/dashboard" },
   { label: "Documents",  href: "/dashboard/documents" },
-  { label: "Test AI",    href: "/dashboard/test" },
+  { label: "AI Center",  href: "/dashboard/test" },
   { label: "Recruit",    href: "/dashboard/recruit" },
-  { label: "Audit Log",  href: "/dashboard/audit" },
 ];
 
 // ─── Electioneering restricted-zone distance ─────────────────────────────────
