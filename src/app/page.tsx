@@ -191,13 +191,13 @@ export default function LandingPage() {
 
           {/* 4 horizontal cards with big letter headers */}
           <div className="mt-12 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            {/* Card 1 — Document Management */}
+            {/* Card 1 — Curate */}
             <ScrollReveal delay={100}>
               <div className="dotted-bento dotted-bento-red-border group h-full flex flex-col overflow-hidden !p-0">
                 <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-blue text-center">
-                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">D</span>
+                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">C</span>
                   <div className="mt-2 h-px w-8 bg-white/40" />
-                  <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Documents</span>
+                  <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Curate</span>
                 </div>
                 <div className="relative z-10 flex flex-col flex-1 p-5">
                   <p className="text-sm leading-relaxed text-slate-500">
@@ -207,40 +207,8 @@ export default function LandingPage() {
               </div>
             </ScrollReveal>
 
-            {/* Card 2 — Test AI Accuracy */}
+            {/* Card 2 — Audit */}
             <ScrollReveal delay={200}>
-              <div className="dotted-bento group h-full flex flex-col overflow-hidden !p-0">
-                <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-red text-center">
-                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">T</span>
-                  <div className="mt-2 h-px w-8 bg-white/40" />
-                  <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Testing</span>
-                </div>
-                <div className="relative z-10 flex flex-col flex-1 p-5">
-                  <p className="text-sm leading-relaxed text-slate-500">
-                    Ask Sam questions in a sandbox. Approve or flag responses and fine-tune answers before deployment.
-                  </p>
-                </div>
-              </div>
-            </ScrollReveal>
-
-            {/* Card 3 — Poll Worker Recruitment */}
-            <ScrollReveal delay={300}>
-              <div className="dotted-bento dotted-bento-red-border group h-full flex flex-col overflow-hidden !p-0">
-                <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-blue text-center">
-                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">R</span>
-                  <div className="mt-2 h-px w-8 bg-white/40" />
-                  <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Recruitment</span>
-                </div>
-                <div className="relative z-10 flex flex-col flex-1 p-5">
-                  <p className="text-sm leading-relaxed text-slate-500">
-                    Scan voter registration data to flag eligible candidates. Filter by age, location, and language to fill every precinct.
-                  </p>
-                </div>
-              </div>
-            </ScrollReveal>
-
-            {/* Card 4 — Audit & Analytics */}
-            <ScrollReveal delay={400}>
               <div className="dotted-bento group h-full flex flex-col overflow-hidden !p-0">
                 <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-red text-center">
                   <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">A</span>
@@ -250,6 +218,38 @@ export default function LandingPage() {
                 <div className="relative z-10 flex flex-col flex-1 p-5">
                   <p className="text-sm leading-relaxed text-slate-500">
                     Full audit log of every AI interaction. See what questions are asked and measure response accuracy.
+                  </p>
+                </div>
+              </div>
+            </ScrollReveal>
+
+            {/* Card 3 — Recruit */}
+            <ScrollReveal delay={300}>
+              <div className="dotted-bento dotted-bento-red-border group h-full flex flex-col overflow-hidden !p-0">
+                <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-blue text-center">
+                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">R</span>
+                  <div className="mt-2 h-px w-8 bg-white/40" />
+                  <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Recruit</span>
+                </div>
+                <div className="relative z-10 flex flex-col flex-1 p-5">
+                  <p className="text-sm leading-relaxed text-slate-500">
+                    Scan voter registration data to flag eligible candidates. Filter by age, location, and language to fill every precinct.
+                  </p>
+                </div>
+              </div>
+            </ScrollReveal>
+
+            {/* Card 4 — Evaluate */}
+            <ScrollReveal delay={400}>
+              <div className="dotted-bento group h-full flex flex-col overflow-hidden !p-0">
+                <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-red text-center">
+                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">E</span>
+                  <div className="mt-2 h-px w-8 bg-white/40" />
+                  <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Evaluate</span>
+                </div>
+                <div className="relative z-10 flex flex-col flex-1 p-5">
+                  <p className="text-sm leading-relaxed text-slate-500">
+                    Ask Sam questions in a sandbox. Approve or flag responses and fine-tune answers before deployment.
                   </p>
                 </div>
               </div>
