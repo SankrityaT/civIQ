@@ -70,23 +70,23 @@ export default function Sidebar() {
           boxShadow: "8px 0 32px -4px rgba(100, 116, 139, 0.15), inset -1px 0 0 rgba(255,255,255,0.8), inset 0 1px 0 rgba(255,255,255,0.6)",
         }}
       >
-        {/* Logo */}
+        {/* Logo - clickable to chat */}
         <div className={`flex items-center py-6 ${collapsed ? "justify-center px-3" : "justify-between px-5"}`} style={{ borderBottom: "1px solid rgba(148, 163, 184, 0.15)" }}>
-          <div className="flex items-center gap-3">
-            <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-xl shadow-sm">
+          <Link href="/chat" className="flex items-center gap-3 group" title="Ask Sam">
+            <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-xl shadow-sm ring-2 ring-transparent transition-all group-hover:ring-amber-400/60 group-hover:scale-105">
               <Image
                 src="/logo.jpeg"
-                alt="Civiq Logo"
+                alt="Ask Sam"
                 fill
                 className="object-cover"
               />
             </div>
             {!collapsed && (
-              <span className="font-[family-name:var(--font-playfair)] text-[18px] font-medium tracking-tight text-slate-900">
+              <span className="font-[family-name:var(--font-playfair)] text-[18px] font-medium tracking-tight text-slate-900 group-hover:text-amber-700 transition-colors">
                 CivIQ
               </span>
             )}
-          </div>
+          </Link>
           {!collapsed && (
             <button
               onClick={() => setCollapsed(true)}
@@ -107,33 +107,6 @@ export default function Sidebar() {
 
         {/* Nav */}
         <nav className={`flex-1 overflow-y-auto py-6 ${collapsed ? "px-2" : "px-3"}`}>
-          {/* Ask Sam shortcut */}
-          {!collapsed && (
-            <Link
-              href="/chat"
-              className="mb-4 flex items-center gap-2.5 rounded-xl border border-amber-500/30 bg-amber-50 px-3 py-2.5 transition-all hover:bg-amber-100/80"
-            >
-              <div className="relative h-7 w-7 flex-shrink-0 overflow-hidden rounded-full ring-1 ring-amber-400/50">
-                <Image src="/logo.jpeg" alt="Sam" fill className="object-cover" unoptimized />
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-semibold text-amber-700">Ask Sam</p>
-                <p className="text-[10px] text-amber-600/70">Poll worker chat</p>
-              </div>
-            </Link>
-          )}
-          {collapsed && (
-            <Link
-              href="/chat"
-              className="mb-4 flex justify-center"
-              title="Ask Sam"
-            >
-              <div className="relative h-9 w-9 flex-shrink-0 overflow-hidden rounded-full ring-2 ring-amber-400/50 transition-all hover:ring-amber-500">
-                <Image src="/logo.jpeg" alt="Sam" fill className="object-cover" unoptimized />
-              </div>
-            </Link>
-          )}
-
           {!collapsed && (
             <p className="mb-3 px-3 text-[9px] font-semibold uppercase tracking-[0.2em] text-slate-400">
               Menu
