@@ -1,7 +1,8 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useSyncExternalStore } from "react";
 import TestChat from "@/components/dashboard/TestChat";
 import AuditLog from "@/components/dashboard/AuditLog";
+import { subscribe, getMetrics } from "@/lib/test-ai-store";
 import KnowledgeGraph from "@/components/dashboard/KnowledgeGraph";
 import {
   Flask,
@@ -30,6 +31,7 @@ interface KBStats {
 
 export default function TestPage() {
   const { stats } = useAuditLog();
+  const metrics = useSyncExternalStore(subscribe, getMetrics, getMetrics);
   const [kbStats, setKbStats] = useState<KBStats | null>(null);
   const [activeTab, setActiveTab] = useState<"chat" | "audit" | "graph">("chat");
 
@@ -40,7 +42,11 @@ export default function TestPage() {
       .catch(() => {});
   }, []);
 
-  const cacheRate = stats.totalAll > 0 ? Math.round((stats.cachedCount / stats.totalAll) * 100) : 0;
+  const totalQueries = metrics.queryCount + stats.totalAll;
+  const totalCached = metrics.cachedHits + stats.cachedCount;
+  const totalFlagged = metrics.flaggedCount + stats.flaggedCount;
+  const totalSpanish = metrics.spanishQueries + stats.spanishCount;
+  const cacheRate = totalQueries > 0 ? Math.round((totalCached / totalQueries) * 100) : 0;
 
   return (
     <div className="space-y-6 pt-8">
@@ -69,12 +75,12 @@ export default function TestPage() {
       {/* ═══ Metrics Row ═══ */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         {[
-          { label: "Queries Today", value: stats.totalToday, icon: ChartLineUp, color: "text-amber-600", bg: "bg-amber-50" },
-          { label: "Total Queries", value: stats.totalAll, icon: TrendUp, color: "text-slate-600", bg: "bg-slate-100" },
+          { label: "Queries Today", value: metrics.queryCountToday + stats.totalToday, icon: ChartLineUp, color: "text-amber-600", bg: "bg-amber-50" },
+          { label: "Total Queries", value: totalQueries, icon: TrendUp, color: "text-slate-600", bg: "bg-slate-100" },
           { label: "Cache Rate", value: `${cacheRate}%`, icon: Lightning, color: "text-emerald-600", bg: "bg-emerald-50" },
-          { label: "Flagged", value: stats.flaggedCount, icon: Warning, color: "text-red-500", bg: "bg-red-50" },
-          { label: "Spanish", value: stats.spanishCount, icon: Globe, color: "text-blue-600", bg: "bg-blue-50" },
-          { label: "Cached", value: stats.cachedCount, icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
+          { label: "Flagged", value: totalFlagged, icon: Warning, color: "text-red-500", bg: "bg-red-50" },
+          { label: "Spanish", value: totalSpanish, icon: Globe, color: "text-blue-600", bg: "bg-blue-50" },
+          { label: "Cached", value: totalCached, icon: ShieldCheck, color: "text-emerald-600", bg: "bg-emerald-50" },
         ].map((m) => {
           const Icon = m.icon;
           return (
@@ -189,7 +195,11 @@ export default function TestPage() {
       )}
 
       {/* ═══ Content ═══ */}
-      {activeTab === "chat" ? <TestChat /> : <AuditLog />}
+      {activeTab === "chat" ? (
+        <TestChat />
+      ) : (
+        <AuditLog />
+      )}
     </div>
   );
 }

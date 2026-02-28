@@ -29,8 +29,8 @@ const MENU_ITEMS = [
 ];
 
 const GENERAL_ITEMS = [
-  { label: "Settings", href: "#", icon: Gear },
-  { label: "Help",     href: "#", icon: Question },
+  { label: "Settings", href: "/dashboard/settings", icon: Gear },
+  { label: "Help",     href: "/dashboard/help",     icon: Question },
 ];
 
 export default function Sidebar() {
@@ -158,26 +158,42 @@ export default function Sidebar() {
           )}
           {collapsed && <div className="my-5 mx-2 h-px bg-slate-200/60" />}
           <ul className="space-y-1">
-            {GENERAL_ITEMS.map(({ label, href, icon: Icon }) => (
-              <li key={label} className="relative group">
-                <Link
-                  href={href}
-                  className={`flex items-center rounded-xl text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900 ${
-                    collapsed ? "justify-center p-3" : "gap-3 px-3 py-2.5"
-                  }`}
-                  title={collapsed ? label : undefined}
-                >
-                  <Icon className="h-[18px] w-[18px] flex-shrink-0 text-slate-400" />
-                  {!collapsed && <span className="text-[13px] font-[family-name:var(--font-playfair)] font-medium tracking-wide">{label}</span>}
-                </Link>
-                {/* Tooltip for collapsed state */}
-                {collapsed && (
-                  <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
-                    {label}
-                  </div>
-                )}
-              </li>
-            ))}
+            {GENERAL_ITEMS.map(({ label, href, icon: Icon }) => {
+              const active = pathname === href;
+              return (
+                <li key={label} className="relative group">
+                  {active && !collapsed && (
+                    <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-amber-500" />
+                  )}
+                  <Link
+                    href={href}
+                    className={`flex items-center rounded-xl transition-all duration-200 ${
+                      collapsed
+                        ? "justify-center p-3"
+                        : "gap-3 px-3 py-2.5"
+                    } ${
+                      active
+                        ? "bg-amber-50 text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    }`}
+                    title={collapsed ? label : undefined}
+                  >
+                    <Icon
+                      className={`h-[18px] w-[18px] flex-shrink-0 ${
+                        active ? "text-amber-600" : "text-slate-400"
+                      }`}
+                    />
+                    {!collapsed && <span className="text-[13px] font-[family-name:var(--font-playfair)] font-medium tracking-wide">{label}</span>}
+                  </Link>
+                  {/* Tooltip for collapsed state */}
+                  {collapsed && (
+                    <div className="pointer-events-none absolute left-full top-1/2 z-50 ml-3 -translate-y-1/2 whitespace-nowrap rounded-lg bg-slate-900 px-3 py-2 text-xs font-medium text-white opacity-0 shadow-xl transition-opacity group-hover:opacity-100">
+                      {label}
+                    </div>
+                  )}
+                </li>
+              );
+            })}
           </ul>
         </nav>
 
@@ -295,18 +311,32 @@ export default function Sidebar() {
             General
           </p>
           <ul className="space-y-1">
-            {GENERAL_ITEMS.map(({ label, href, icon: Icon }) => (
-              <li key={label}>
-                <Link
-                  href={href}
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium text-slate-600 transition-all duration-200 hover:bg-slate-50 hover:text-slate-900"
-                >
-                  <Icon className="h-[18px] w-[18px] flex-shrink-0 text-slate-400" />
-                  {label}
-                </Link>
-              </li>
-            ))}
+            {GENERAL_ITEMS.map(({ label, href, icon: Icon }) => {
+              const active = pathname === href;
+              return (
+                <li key={label} className="relative">
+                  {active && (
+                    <span className="absolute left-0 top-1/2 h-5 w-[3px] -translate-y-1/2 rounded-r-full bg-amber-500" />
+                  )}
+                  <Link
+                    href={href}
+                    onClick={() => setMobileOpen(false)}
+                    className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-[13px] font-medium transition-all duration-200 ${
+                      active
+                        ? "bg-amber-50 text-slate-900 shadow-sm"
+                        : "text-slate-600 hover:bg-slate-50 hover:text-slate-900"
+                    }`}
+                  >
+                    <Icon
+                      className={`h-[18px] w-[18px] flex-shrink-0 ${
+                        active ? "text-amber-600" : "text-slate-400"
+                      }`}
+                    />
+                    {label}
+                  </Link>
+                </li>
+              );
+            })}
           </ul>
         </nav>
 
