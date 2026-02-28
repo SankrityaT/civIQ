@@ -8,7 +8,7 @@ export default function LandingPage() {
   return (
     <>
       <SmoothScroll />
-      <div className="font-[family-name:var(--font-dm)]">
+      <div className="font-[family-name:var(--font-inter)]">
         {/* ── NAVBAR ───────────────────────────────────────────────────── */}
         <Navbar />
 
@@ -45,16 +45,16 @@ export default function LandingPage() {
             AI-Powered Election Support
           </div>
 
-          <h1 className="font-[family-name:var(--font-cormorant)] text-6xl font-light leading-[1.05] tracking-tight text-slate-900 sm:text-7xl md:text-8xl">
-            <span className="text-usa-blue">Train</span> poll workers.
+          <h1 className="font-[family-name:var(--font-playfair)] text-6xl font-medium leading-[1.05] tracking-tight text-slate-900 sm:text-7xl md:text-8xl">
+            <span className="text-usa-blue italic">Empower</span> your workforce.
             <br />
-            <span className="text-usa-red">Answer</span> every question.
+            <span className="text-usa-red italic">Protect</span> every vote.
           </h1>
 
           <p className="mt-6 max-w-xl text-lg leading-relaxed text-slate-600">
-            Civiq gives election officials an AI assistant that knows your
-            training manuals inside out &mdash; so every poll worker gets
-            instant, accurate answers on election day.
+            Most election offices are run by a single person. CivIQ gives
+            them an AI assistant that turns training manuals into instant,
+            source-cited answers, so every poll worker shows up ready.
           </p>
 
           <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row">
@@ -89,7 +89,7 @@ export default function LandingPage() {
               <span className="text-xs font-bold tracking-[0.2em] text-usa-red uppercase">
                 Your AI Assistant
               </span>
-              <h2 className="mt-4 font-[family-name:var(--font-cormorant)] text-4xl font-light leading-tight tracking-tight text-usa-blue sm:text-5xl md:text-6xl">
+              <h2 className="mt-4 font-[family-name:var(--font-playfair)] text-4xl font-medium leading-tight tracking-tight text-usa-blue sm:text-5xl md:text-6xl">
                 Meet Sam.
               </h2>
             </div>
@@ -125,7 +125,7 @@ export default function LandingPage() {
 
                 {/* Right — Timeline activity */}
                 <div className="flex-1 space-y-5 pt-2">
-                  <h3 className="text-2xl font-bold text-slate-900 font-[family-name:var(--font-libre)]">
+                  <h3 className="text-2xl font-semibold text-slate-900 font-[family-name:var(--font-playfair)] tracking-tight">
                     Sam the Eagle
                   </h3>
 
@@ -179,13 +179,12 @@ export default function LandingPage() {
               <span className="text-xs font-bold tracking-[0.2em] text-usa-red uppercase">
                 Election Officials
               </span>
-              <h2 className="mt-4 font-[family-name:var(--font-cormorant)] text-4xl font-light leading-tight tracking-tight text-usa-blue sm:text-5xl md:text-6xl">
+              <h2 className="mt-4 font-[family-name:var(--font-playfair)] text-4xl font-medium leading-tight tracking-tight text-usa-blue sm:text-5xl md:text-6xl">
                 Your command center.
               </h2>
               <p className="mx-auto mt-6 max-w-2xl text-lg text-slate-500">
-                A dashboard built for the people who run elections &mdash; upload
-                training documents, test AI accuracy, recruit workers, and
-                monitor everything in real time.
+                One place to upload training documents, test AI accuracy,
+                find poll worker candidates, and audit every interaction.
               </p>
             </div>
           </ScrollReveal>
@@ -196,7 +195,7 @@ export default function LandingPage() {
             <ScrollReveal delay={100}>
               <div className="dotted-bento dotted-bento-red-border group h-full flex flex-col overflow-hidden !p-0">
                 <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-blue text-center">
-                  <span className="font-[family-name:var(--font-cormorant)] text-6xl font-light text-white">D</span>
+                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">D</span>
                   <div className="mt-2 h-px w-8 bg-white/40" />
                   <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Documents</span>
                 </div>
@@ -212,7 +211,7 @@ export default function LandingPage() {
             <ScrollReveal delay={200}>
               <div className="dotted-bento group h-full flex flex-col overflow-hidden !p-0">
                 <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-red text-center">
-                  <span className="font-[family-name:var(--font-cormorant)] text-6xl font-light text-white">T</span>
+                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">T</span>
                   <div className="mt-2 h-px w-8 bg-white/40" />
                   <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Testing</span>
                 </div>
@@ -228,13 +227,13 @@ export default function LandingPage() {
             <ScrollReveal delay={300}>
               <div className="dotted-bento dotted-bento-red-border group h-full flex flex-col overflow-hidden !p-0">
                 <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-blue text-center">
-                  <span className="font-[family-name:var(--font-cormorant)] text-6xl font-light text-white">R</span>
+                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">R</span>
                   <div className="mt-2 h-px w-8 bg-white/40" />
                   <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Recruitment</span>
                 </div>
                 <div className="relative z-10 flex flex-col flex-1 p-5">
                   <p className="text-sm leading-relaxed text-slate-500">
-                    Track recruitment progress, manage sign-ups, and ensure every precinct is fully staffed.
+                    Scan voter registration data to flag eligible candidates. Filter by age, location, and language to fill every precinct.
                   </p>
                 </div>
               </div>
@@ -244,7 +243,7 @@ export default function LandingPage() {
             <ScrollReveal delay={400}>
               <div className="dotted-bento group h-full flex flex-col overflow-hidden !p-0">
                 <div className="flex flex-col items-center justify-center py-8 px-4 bg-usa-red text-center">
-                  <span className="font-[family-name:var(--font-cormorant)] text-6xl font-light text-white">A</span>
+                  <span className="font-[family-name:var(--font-playfair)] text-6xl font-medium text-white">A</span>
                   <div className="mt-2 h-px w-8 bg-white/40" />
                   <span className="mt-2 text-[10px] font-bold tracking-[0.2em] text-white/70 uppercase">Audit</span>
                 </div>
@@ -281,11 +280,11 @@ export default function LandingPage() {
               <span className="text-xs font-bold tracking-[0.2em] text-usa-red uppercase">
                 Trust &amp; Transparency
               </span>
-              <h2 className="mt-4 font-[family-name:var(--font-cormorant)] text-4xl font-light leading-tight tracking-tight text-usa-blue sm:text-5xl">
+              <h2 className="mt-4 font-[family-name:var(--font-playfair)] text-4xl font-medium leading-tight tracking-tight text-usa-blue sm:text-5xl">
                 Built for trust.
               </h2>
               <p className="mx-auto mt-4 max-w-lg text-base text-slate-500">
-                Every safeguard election officials need &mdash; baked into the system from day one.
+                Every safeguard election officials need, built into the system from day one.
               </p>
             </div>
           </ScrollReveal>
@@ -304,8 +303,8 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div className="pt-1 sm:pt-3">
-                  <h3 className="text-lg font-bold text-usa-blue">Local &amp; Private</h3>
-                  <p className="mt-1.5 text-sm leading-relaxed text-slate-500">Data never leaves the building. Fully on-device in production &mdash; no cloud, no internet required. Your election data stays yours.</p>
+                  <h3 className="text-lg font-[family-name:var(--font-playfair)] font-semibold text-usa-blue tracking-tight">Local &amp; Private</h3>
+                  <p className="mt-1.5 text-sm leading-relaxed text-slate-500">Data never leaves the building. Fully on-device in production with no cloud and no internet required. Your election data stays yours.</p>
                 </div>
               </div>
             </ScrollReveal>
@@ -319,7 +318,7 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div className="pt-1 sm:pt-3">
-                  <h3 className="text-lg font-bold text-usa-blue">Human in the Loop</h3>
+                  <h3 className="text-lg font-[family-name:var(--font-playfair)] font-semibold text-usa-blue tracking-tight">Human in the Loop</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-slate-500">Officials control the entire knowledge base. Every AI response can be reviewed, flagged, or edited before it reaches poll workers.</p>
                 </div>
               </div>
@@ -334,7 +333,7 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div className="pt-1 sm:pt-3">
-                  <h3 className="text-lg font-bold text-usa-blue">Bilingual from Day One</h3>
+                  <h3 className="text-lg font-[family-name:var(--font-playfair)] font-semibold text-usa-blue tracking-tight">Multilingual from Day One</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-slate-500">English and Spanish support with equal quality. Every poll worker gets the same accurate answers, regardless of language preference.</p>
                 </div>
               </div>
@@ -349,7 +348,7 @@ export default function LandingPage() {
                   </svg>
                 </div>
                 <div className="pt-1 sm:pt-3">
-                  <h3 className="text-lg font-bold text-usa-blue">Full Audit Trail</h3>
+                  <h3 className="text-lg font-[family-name:var(--font-playfair)] font-semibold text-usa-blue tracking-tight">Full Audit Trail</h3>
                   <p className="mt-1.5 text-sm leading-relaxed text-slate-500">Every interaction is logged and reviewable. Election officials get complete transparency into what questions are asked and how they&apos;re answered.</p>
                 </div>
               </div>
@@ -373,11 +372,11 @@ export default function LandingPage() {
           <div className="absolute inset-0 pointer-events-none border-y" style={{ borderColor: 'rgba(0,40,104,0.1)' }} />
           <div className="relative mx-auto max-w-3xl text-center">
             <ScrollReveal>
-              <h2 className="font-[family-name:var(--font-cormorant)] text-3xl font-light text-usa-blue sm:text-4xl md:text-5xl">
-                Ready to modernize your election operations?
+              <h2 className="font-[family-name:var(--font-playfair)] text-3xl font-medium text-usa-blue sm:text-4xl md:text-5xl">
+                Built for the one-person election office.
               </h2>
               <p className="mx-auto mt-5 max-w-xl text-lg text-slate-500">
-                Join the growing number of election officials using AI to support their poll workers.
+                Recruit smarter. Train better. Support always.
               </p>
               <div className="mt-10 flex flex-col items-center gap-4 sm:flex-row sm:justify-center">
                 <Link
@@ -406,10 +405,10 @@ export default function LandingPage() {
         <div className="relative z-10 mx-auto max-w-5xl px-6 pt-20 pb-8">
           {/* Logo */}
           <div className="flex flex-col items-center">
-            <div className="relative h-14 w-40 p-3 bg-white rounded-xl shadow-lg">
+            <div className="relative h-20 w-20">
               <Image
-                src="/civiq-logo-transparent.png"
-                alt="Civiq"
+                src="/logo.png"
+                alt="CivIQ"
                 fill
                 className="object-contain"
               />
@@ -440,7 +439,7 @@ export default function LandingPage() {
 
           {/* Copyright */}
           <p className="mt-10 text-center text-[11px] text-white/25 tracking-wider">
-            &copy; {new Date().getFullYear()} Civiq. Built for election officials.
+            &copy; {new Date().getFullYear()} CivIQ. Built for election officials.
           </p>
         </div>
       </footer>

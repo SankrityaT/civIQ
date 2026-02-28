@@ -478,10 +478,10 @@ function AIMessage({
       <div className="mb-3 flex items-center gap-2.5">
         <div className="relative h-8 w-8 flex-shrink-0 overflow-hidden rounded-full shadow ring-2 ring-amber-200">
           <Image
-            src={isStreaming ? "/sam.gif" : "/logo.jpeg"}
+            src={isStreaming ? "/sam.gif" : "/logo.png"}
             alt="Sam"
             fill
-            className="object-cover"
+            className="object-contain"
             unoptimized
           />
         </div>
@@ -749,7 +749,7 @@ export default function ChatWindow() {
         <div className="flex items-center justify-between border-b border-slate-100 bg-white/95 px-6 py-4 backdrop-blur-md shadow-sm">
           <div className="flex items-center gap-3">
             <div className="relative h-10 w-10 flex-shrink-0 overflow-hidden rounded-full shadow-md ring-2 ring-amber-300">
-              <Image src="/logo.jpeg" alt="Sam" fill className="object-cover" unoptimized />
+              <Image src="/logo.png" alt="CivIQ" fill className="object-contain" unoptimized />
             </div>
             <div>
               <p className="text-base font-semibold text-slate-900">Ask Sam</p>
@@ -808,7 +808,7 @@ export default function ChatWindow() {
             <div className="flex h-full flex-col items-center justify-center">
               {/* Hero avatar */}
               <div className="relative mb-6 h-28 w-28 overflow-hidden rounded-full shadow-xl ring-4 ring-amber-100">
-                <Image src="/sam.gif" alt="Sam" fill className="object-cover" unoptimized />
+                <Image src="/sam.gif" alt="Sam" fill className="object-contain" unoptimized />
               </div>
               <h2 className="font-[family-name:var(--font-playfair)] text-3xl font-medium text-slate-900">
                 {language === "en" ? "Hi, I'm Sam." : "Hola, soy Sam."}

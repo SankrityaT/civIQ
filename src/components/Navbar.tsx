@@ -15,14 +15,14 @@ export default function Navbar() {
           <div className="relative h-8 w-8">
             <Image
               src="/logo.png"
-              alt="Civiq"
+              alt="CivIQ"
               fill
               className="object-contain"
               priority
             />
           </div>
-          <span className="text-[13px] font-bold tracking-tight text-usa-blue">
-            Civiq
+          <span className="text-[15px] font-medium tracking-tight text-usa-blue font-[family-name:var(--font-playfair)]">
+            CivIQ
           </span>
         </Link>
         <a href="#meet-sam" className="glass-nav-item">Meet Sam</a>
@@ -37,13 +37,13 @@ export default function Navbar() {
           <div className="relative h-7 w-7">
             <Image
               src="/logo.png"
-              alt="Civiq"
+              alt="CivIQ"
               fill
               className="object-contain"
               priority
             />
           </div>
-          <span className="text-[13px] font-bold tracking-tight text-usa-blue">Civiq</span>
+          <span className="text-[15px] font-medium tracking-tight text-usa-blue font-[family-name:var(--font-playfair)]">CivIQ</span>
         </Link>
 
         <button
