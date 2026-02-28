@@ -117,11 +117,11 @@ function generateQuestionFromSection(sectionTitle: string): { q: string; qEs: st
   // General fallback — extract the short section name only
   const match = sectionTitle.match(/Section\s+\d+\s*[:\-]?\s*([A-Za-z &\-]+)/i);
   if (match) {
-    const topic = match[1].trim().replace(/\s+/g, " ").slice(0, 30);
+    const topic = match[1].trim().replace(/\s+/g, " ");
     if (topic.length > 3) return { 
       q: `What do I need to know about ${topic}?`, 
       qEs: `¿Qué necesito saber sobre ${topic}?`,
-      category: topic.slice(0, 15) 
+      category: topic
     };
   }
 

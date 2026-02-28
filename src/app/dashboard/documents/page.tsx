@@ -68,15 +68,15 @@ export default function DocumentsPage() {
       </div>
 
       {/* How it works — 3-step guided workflow */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-stretch">
         {WORKFLOW_STEPS.map((step, idx) => {
           const Icon = step.icon;
           const inner = (
             <div
               key={step.num}
-              className={`relative rounded-2xl border ${step.border} ${step.bg} p-4 transition-all hover:shadow-sm group`}
+              className={`relative rounded-2xl border ${step.border} ${step.bg} p-4 h-full flex flex-col transition-all hover:shadow-sm group`}
             >
-              <div className="flex items-start gap-3">
+              <div className="flex items-start gap-3 flex-1">
                 <div className={`flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-xl bg-white shadow-sm border ${step.border}`}>
                   <Icon size={18} weight="duotone" className={step.color} />
                 </div>
