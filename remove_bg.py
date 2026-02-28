@@ -30,16 +30,10 @@ def remove_background(input_path, output_path, tolerance=30):
     return result
 
 if __name__ == "__main__":
-    input_file = "public/civIQLogo.png"
-    output_file = "public/civiq-logo-transparent.png"
+    input_file = "public/NewLogo.jpg"
+    output_file = "public/logo.png"
     
     try:
-        remove_background(input_file, output_file, tolerance=25)
+        remove_background(input_file, output_file, tolerance=30)
     except Exception as e:
         print(f"Error: {e}")
-        # Fallback: just copy if already has transparency
-        img = Image.open(input_file)
-        if img.mode != 'RGBA':
-            img = img.convert('RGBA')
-        img.save(output_file, 'PNG')
-        print(f"✓ Saved logo (fallback) to: {output_file}")

@@ -39,7 +39,7 @@ html {
   left: 50%;
   transform: translateX(-50%);
   z-index: 100;
-  display: flex;
+  display: none;
   align-items: center;
   gap: 6px;
   padding: 8px 10px;
@@ -52,6 +52,12 @@ html {
     0 2px 20px rgba(0, 0, 0, 0.08),
     0 0 0 0.5px rgba(0, 0, 0, 0.03);
   transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (min-width: 768px) {
+  .glass-nav {
+    display: flex;
+  }
 }
 
 .glass-nav:hover {
@@ -92,10 +98,9 @@ html {
 }
 
 .glass-nav-logo {
-  padding: 4px 12px 4px 6px;
+  padding: 4px 8px 4px 4px;
   display: flex;
   align-items: center;
-  gap: 8px;
   border-radius: 50px;
   transition: all 0.3s ease;
 }
@@ -317,7 +322,6 @@ html {
   opacity: 0.4;
 
 }
-
 
 /* ── Light Card Hover ──────────────────────────────────────── */
 .light-card-red {

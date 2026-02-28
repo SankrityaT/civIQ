@@ -34,6 +34,11 @@ export const metadata: Metadata = {
   title: "Civiq — AI-Powered Election Assistant",
   description:
     "Meet Sam, your AI poll worker assistant. Civiq helps election officials train, manage, and support poll workers with AI.",
+  icons: {
+    icon: "/logo.png",
+    shortcut: "/logo.png",
+    apple: "/logo.png",
+  },
 };
 
 export default function RootLayout({

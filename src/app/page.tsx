@@ -2,48 +2,25 @@ import Link from "next/link";
 import Image from "next/image";
 import SmoothScroll from "@/components/SmoothScroll";
 import ScrollReveal from "@/components/ScrollReveal";
+import Navbar from "@/components/Navbar";
 
 export default function LandingPage() {
   return (
     <>
       <SmoothScroll />
       <div className="font-[family-name:var(--font-dm)]">
-        {/* ── iOS 26 LIQUID GLASS NAV ──────────────────────────────────── */}
-        <nav className="glass-nav">
-          <Link href="/" className="glass-nav-logo">
-            <div className="relative h-9 w-28">
-              <Image
-                src="/civiq-logo-transparent.png"
-                alt="Civiq"
-                fill
-                className="object-contain"
-                priority
-              />
-            </div>
-          </Link>
-          <a href="#meet-sam" className="glass-nav-item">
-            Meet Sam
-          </a>
-          <a href="#command-center" className="glass-nav-item">
-            Features
-          </a>
-          <Link href="/chat" className="glass-nav-item">
-            Ask Sam
-          </Link>
-          <Link href="/dashboard" className="glass-nav-item glass-nav-item-active">
-            Dashboard
-          </Link>
-        </nav>
+        {/* ── NAVBAR ───────────────────────────────────────────────────── */}
+        <Navbar />
 
       {/* ── HERO ────────────────────────────────────────────────────────── */}
-      <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white px-6 pt-20">
+      <section className="relative flex min-h-screen flex-col items-center justify-center overflow-hidden bg-white px-6 pt-14 md:pt-20">
         {/* Red, blue, white shade orbs — distinct blended patches, not gradient */}
-        <div className="hero-shade-red" style={{ width: '500px', height: '500px', top: '-10%', right: '-5%' }} />
-        <div className="hero-shade-blue" style={{ width: '600px', height: '600px', top: '10%', left: '-8%' }} />
-        <div className="hero-shade-white" style={{ width: '400px', height: '400px', top: '20%', left: '30%' }} />
-        <div className="hero-shade-red" style={{ width: '350px', height: '350px', bottom: '5%', left: '10%', opacity: 0.05 }} />
-        <div className="hero-shade-blue" style={{ width: '400px', height: '400px', bottom: '-5%', right: '5%', opacity: 0.05 }} />
-        <div className="hero-shade-white" style={{ width: '300px', height: '300px', top: '50%', right: '20%' }} />
+        <div className="hero-shade-red" style={{ width: 'min(500px, 80vw)', height: 'min(500px, 80vw)', top: '-10%', right: '-5%' }} />
+        <div className="hero-shade-blue" style={{ width: 'min(600px, 90vw)', height: 'min(600px, 90vw)', top: '10%', left: '-8%' }} />
+        <div className="hero-shade-white" style={{ width: 'min(400px, 70vw)', height: 'min(400px, 70vw)', top: '20%', left: '30%' }} />
+        <div className="hero-shade-red" style={{ width: 'min(350px, 60vw)', height: 'min(350px, 60vw)', bottom: '5%', left: '10%', opacity: 0.05 }} />
+        <div className="hero-shade-blue" style={{ width: 'min(400px, 70vw)', height: 'min(400px, 70vw)', bottom: '-5%', right: '5%', opacity: 0.05 }} />
+        <div className="hero-shade-white" style={{ width: 'min(300px, 60vw)', height: 'min(300px, 60vw)', top: '50%', right: '20%' }} />
 
         {/* Decorative floating stars */}
         <div className="absolute top-32 left-[15%] float-slow">
@@ -124,7 +101,7 @@ export default function LandingPage() {
               <div className="flex flex-col md:flex-row gap-8 md:gap-10">
                 {/* Left — Sam avatar box */}
                 <div className="flex flex-col items-center gap-4">
-                  <div className="sam-avatar-box w-48 h-56 md:w-52 md:h-60 p-4">
+                  <div className="sam-avatar-box w-36 h-44 sm:w-48 sm:h-56 md:w-52 md:h-60 p-4">
                     <div className="relative w-full h-full">
                       <Image
                         src="/sam.gif"
@@ -427,19 +404,16 @@ export default function LandingPage() {
         <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[300px] pointer-events-none" style={{ background: 'radial-gradient(ellipse at center top, rgba(100,140,220,0.15) 0%, transparent 70%)' }} />
 
         <div className="relative z-10 mx-auto max-w-5xl px-6 pt-20 pb-8">
-          {/* Mascot + Brand */}
+          {/* Logo */}
           <div className="flex flex-col items-center">
-            <div className="relative h-16 w-16 overflow-hidden rounded-full border-2 border-white/15 shadow-lg shadow-black/20">
+            <div className="relative h-14 w-40 p-3 bg-white rounded-xl shadow-lg">
               <Image
-                src="/logo.jpeg"
-                alt="Civiq Logo"
+                src="/civiq-logo-transparent.png"
+                alt="Civiq"
                 fill
-                className="object-cover"
+                className="object-contain"
               />
             </div>
-            <span className="mt-4 font-[family-name:var(--font-cormorant)] text-2xl font-semibold tracking-tight text-white">
-              Civiq
-            </span>
             <p className="mt-1 text-xs text-white/40 tracking-wide">
               AI-Powered Election Workforce Assistant
             </p>
@@ -449,7 +423,7 @@ export default function LandingPage() {
           <div className="mx-auto mt-10 mb-8 w-16 h-px bg-white/15" />
 
           {/* Navigation Links */}
-          <div className="flex flex-wrap items-center justify-center gap-x-10 gap-y-3">
+          <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-4 sm:gap-x-10">
             <a href="#meet-sam" className="text-[13px] font-medium text-white/50 hover:text-white transition-colors tracking-wide uppercase">
               Meet Sam
             </a>
