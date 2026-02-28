@@ -41,9 +41,9 @@ const cormorant = Cormorant_Garamond({
 });
 
 export const metadata: Metadata = {
-  title: "Civiq — AI-Powered Election Assistant",
+  title: "CivIQ — AI-Powered Election Assistant",
   description:
-    "Meet Sam, your AI poll worker assistant. Civiq helps election officials train, manage, and support poll workers with AI.",
+    "Meet Sam, your AI poll worker assistant. CivIQ helps election officials train, manage, and support poll workers with AI.",
   icons: {
     icon: "/logo.png",
     shortcut: "/logo.png",
