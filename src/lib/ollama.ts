@@ -32,6 +32,27 @@ export function resetOllamaCache() {
 }
 
 /**
+ * Warmup: loads the model into GPU memory and keeps it there.
+ * Call once at app startup so the first real request is instant.
+ */
+export async function warmupOllama(): Promise<void> {
+  try {
+    await fetch(`${OLLAMA_URL}/api/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: OLLAMA_MODEL,
+        messages: [{ role: "user", content: "hi" }],
+        stream: false,
+        keep_alive: -1,
+        options: { num_predict: 1 },
+      }),
+      signal: AbortSignal.timeout(30000),
+    });
+  } catch { /* silent — warmup is best-effort */ }
+}
+
+/**
  * Non-streaming Ollama call — returns full text or null.
  */
 export async function ollamaComplete(
@@ -46,6 +67,7 @@ export async function ollamaComplete(
         model: OLLAMA_MODEL,
         messages,
         stream: false,
+        keep_alive: -1,
         options: {
           temperature: opts.temperature ?? 0.1,
           num_predict: opts.maxTokens ?? 512,
@@ -77,6 +99,7 @@ export async function ollamaStream(
         model: OLLAMA_MODEL,
         messages,
         stream: true,
+        keep_alive: -1,
         options: {
           temperature: opts.temperature ?? 0.1,
           num_predict: opts.maxTokens ?? 512,

@@ -148,11 +148,52 @@ export async function GET() {
     });
   } catch (error) {
     console.error("❌ Knowledge graph error:", error);
-    // Sidecar offline — return minimal static graph
-    return NextResponse.json({
-      nodes: [],
-      edges: [],
-      meta: { totalChunks: 0, totalNodes: 0, totalEdges: 0, live: false },
-    });
+    console.log("⚠️  Falling back to local knowledge base...");
+    
+    // Sidecar offline — fall back to local KB
+    try {
+      const { getKnowledgeBase, ensureKnowledgeBaseIngested } = await import("@/lib/knowledge-base");
+      await ensureKnowledgeBaseIngested();
+      const kb = getKnowledgeBase();
+      
+      const nodes: GraphNode[] = [];
+      const edges: GraphEdge[] = [];
+      const nodeIds = new Set<string>();
+      
+      // Get all sections from local KB
+      const sections = kb.getSectionTitles();
+      const docNodeId = "doc:local";
+      nodes.push({ id: docNodeId, label: "Training Manual", type: "document", docId: "local", size: 14 });
+      nodeIds.add(docNodeId);
+      
+      // Add section nodes (limit to 30 for performance)
+      for (const sectionTitle of sections.slice(0, 30)) {
+        const secNodeId = `sec:${sectionTitle.slice(0, 30)}`;
+        const cleanLabel = sectionTitle.replace(/^[\d.]+\s+/, "").trim();
+        nodes.push({
+          id: secNodeId,
+          label: cleanLabel.length > 20 ? cleanLabel.slice(0, 20) + "…" : cleanLabel,
+          type: "section",
+          docId: "local",
+          size: 7,
+        });
+        nodeIds.add(secNodeId);
+        edges.push({ source: docNodeId, target: secNodeId, weight: 1.0 });
+      }
+      
+      console.log(`✅ Built fallback graph: ${nodes.length} nodes, ${edges.length} edges`);
+      return NextResponse.json({
+        nodes,
+        edges,
+        meta: { totalChunks: sections.length, totalNodes: nodes.length, totalEdges: edges.length, live: false },
+      });
+    } catch (fallbackError) {
+      console.error("❌ Fallback also failed:", fallbackError);
+      return NextResponse.json({
+        nodes: [],
+        edges: [],
+        meta: { totalChunks: 0, totalNodes: 0, totalEdges: 0, live: false },
+      });
+    }
   }
 }

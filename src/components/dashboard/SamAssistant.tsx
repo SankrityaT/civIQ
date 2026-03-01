@@ -23,11 +23,11 @@ interface AssistantMessage {
 }
 
 const QUICK_ACTIONS = [
-  { label: "How do I recruit poll workers?", icon: "👥" },
-  { label: "Show me the training documents", icon: "📄" },
+  { label: "Take me to recruitment", icon: "👥" },
+  { label: "Show me training documents", icon: "📄" },
   { label: "Take me to the audit log", icon: "📋" },
-  { label: "How does the AI work?", icon: "🤖" },
-  { label: "What is the knowledge base?", icon: "🧠" },
+  { label: "How does AI scoring work?", icon: "🤖" },
+  { label: "Show the knowledge graph", icon: "🧠" },
 ];
 
 export default function SamAssistant() {
@@ -35,6 +35,8 @@ export default function SamAssistant() {
   const [messages, setMessages] = useState<AssistantMessage[]>([]);
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [quickActionsOpen, setQuickActionsOpen] = useState(true);
+  const [pageContext, setPageContext] = useState<Record<string, unknown>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
@@ -67,6 +69,34 @@ export default function SamAssistant() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
+  // Fetch live page context whenever pathname changes
+  useEffect(() => {
+    async function fetchContext() {
+      try {
+        const ctx: Record<string, unknown> = { path: pathname };
+        if (pathname.includes("/documents")) {
+          const r = await fetch("/api/documents");
+          if (r.ok) { const d = await r.json(); ctx.documents = d.documents ?? []; }
+        } else if (pathname.includes("/recruit")) {
+          const r = await fetch("/api/voters/scored");
+          if (r.ok) { const d = await r.json(); ctx.candidates = d.total ?? 0; ctx.eligible = d.eligible ?? 0; }
+        } else if (pathname.includes("/audit")) {
+          const r = await fetch("/api/audit");
+          if (r.ok) { const d = await r.json(); ctx.auditCount = d.entries?.length ?? 0; }
+        } else if (pathname === "/dashboard") {
+          const [docs, scored] = await Promise.allSettled([
+            fetch("/api/documents").then(r => r.json()),
+            fetch("/api/voters/scored").then(r => r.json()),
+          ]);
+          if (docs.status === "fulfilled") ctx.docCount = docs.value.documents?.length ?? 0;
+          if (scored.status === "fulfilled") ctx.candidateCount = scored.value.total ?? 0;
+        }
+        setPageContext(ctx);
+      } catch { /* silent — context is best-effort */ }
+    }
+    fetchContext();
+  }, [pathname]);
+
   function getWelcomeMessage(): string {
     const page = pathname;
     if (page === "/dashboard") {
@@ -75,8 +105,8 @@ export default function SamAssistant() {
     if (page.includes("/documents")) {
       return "You're on the Training Documents page! 📄 Here you can upload and manage the documents I learn from. Need help uploading a doc or understanding how the knowledge base works?";
     }
-    if (page.includes("/test")) {
-      return "Welcome to the AI Command Center! 🧪 This is where you can test my responses, review metrics, and audit interactions. Want me to walk you through anything?";
+    if (page.includes("/ai-center") || page.includes("/test")) {
+      return "You're viewing the Knowledge Graph! � This visualizes how all your training document concepts connect. Want to upload more docs or check recruitment?";
     }
     if (page.includes("/recruit")) {
       return "You're on the Recruitment page! 👥 I can help you understand how AI scoring works, or take you to other sections of the dashboard. What do you need?";
@@ -114,7 +144,7 @@ export default function SamAssistant() {
       const res = await fetch("/api/sam-assist", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message, currentPath: pathname }),
+        body: JSON.stringify({ message, currentPath: pathname, pageContext }),
       });
       const data = await res.json();
 
@@ -159,10 +189,10 @@ export default function SamAssistant() {
         response: "Opening Training Documents! 📄 This is where you manage all the documents I learn from. You can upload new PDFs, toggle documents active/inactive, and see word counts.",
       },
       {
-        keywords: ["test", "ai", "command center", "chat test", "try"],
-        path: "/dashboard/test",
-        label: "AI Command Center",
-        response: "Heading to the AI Command Center! 🧪 Here you can test my responses before they reach poll workers, see metrics, and review the audit log — all in one place.",
+        keywords: ["knowledge", "graph", "ai center", "concepts", "visualization"],
+        path: "/dashboard/ai-center",
+        label: "Knowledge Graph",
+        response: "Opening the Knowledge Graph! � This shows how all concepts in your training documents are connected. Great for understanding what Sam knows.",
       },
       {
         keywords: ["recruit", "candidate", "hire", "poll worker", "find"],
@@ -309,11 +339,17 @@ export default function SamAssistant() {
             )}
           </div>
 
-          {/* Quick actions (show when few messages) */}
-          {messages.length <= 1 && (
-            <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
-              <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Quick Actions</p>
-              <div className="flex flex-wrap gap-1.5">
+          {/* Quick actions — always visible, collapsible */}
+          <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-2">
+            <button
+              onClick={() => setQuickActionsOpen(p => !p)}
+              className="flex w-full items-center justify-between text-[10px] font-semibold text-slate-400 uppercase tracking-wider py-1 hover:text-slate-600"
+            >
+              <span>Quick Actions</span>
+              <ChevronDown className={`h-3 w-3 transition-transform ${quickActionsOpen ? "" : "-rotate-90"}`} />
+            </button>
+            {quickActionsOpen && (
+              <div className="flex flex-wrap gap-1.5 pb-1">
                 {QUICK_ACTIONS.map((action) => (
                   <button
                     key={action.label}
@@ -325,8 +361,8 @@ export default function SamAssistant() {
                   </button>
                 ))}
               </div>
-            </div>
-          )}
+            )}
+          </div>
 
           {/* Input */}
           <div className="border-t border-slate-100 bg-white px-3 py-3">

@@ -2,7 +2,7 @@
 // Animated Knowledge Graph Visualization — canvas-based network with spreading amoeba effect
 "use client";
 import { useRef, useEffect, useState, useCallback } from "react";
-import { TreeStructure } from "@phosphor-icons/react";
+import { TreeStructure, MagnifyingGlassMinus, MagnifyingGlassPlus, ArrowsOut } from "@phosphor-icons/react";
 
 interface GraphNode {
   id: string;
@@ -56,6 +56,12 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
   const [liveStats, setLiveStats] = useState<{ nodes: number; edges: number; live: boolean } | null>(null);
   const litCountRef = useRef(0);
   const lastSpawnRef = useRef(0);
+  
+  // Interactive state
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const isDraggingRef = useRef(false);
+  const lastMouseRef = useRef({ x: 0, y: 0 });
 
   const buildGraphFromData = useCallback((
     apiNodes: Array<{ id: string; label: string; type: string }>,
@@ -185,6 +191,47 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
     buildGraph();
   }, [buildGraph]);
 
+  // Mouse interaction handlers
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      setZoom(z => Math.max(0.5, Math.min(3, z * delta)));
+    };
+
+    const handleMouseDown = (e: MouseEvent) => {
+      isDraggingRef.current = true;
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!isDraggingRef.current) return;
+      const dx = e.clientX - lastMouseRef.current.x;
+      const dy = e.clientY - lastMouseRef.current.y;
+      setPan(p => ({ x: p.x + dx, y: p.y + dy }));
+      lastMouseRef.current = { x: e.clientX, y: e.clientY };
+    };
+
+    const handleMouseUp = () => {
+      isDraggingRef.current = false;
+    };
+
+    canvas.addEventListener('wheel', handleWheel, { passive: false });
+    canvas.addEventListener('mousedown', handleMouseDown);
+    window.addEventListener('mousemove', handleMouseMove);
+    window.addEventListener('mouseup', handleMouseUp);
+
+    return () => {
+      canvas.removeEventListener('wheel', handleWheel);
+      canvas.removeEventListener('mousedown', handleMouseDown);
+      window.removeEventListener('mousemove', handleMouseMove);
+      window.removeEventListener('mouseup', handleMouseUp);
+    };
+  }, []);
+
   // Animation loop
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -271,8 +318,12 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
         e.alpha += (e.targetAlpha - e.alpha) * 0.06;
       }
 
-      // Draw
+      // Draw with zoom and pan transform
       ctx.clearRect(0, 0, dimensions.w, dimensions.h);
+      ctx.save();
+      ctx.translate(dimensions.w / 2 + pan.x, dimensions.h / 2 + pan.y);
+      ctx.scale(zoom, zoom);
+      ctx.translate(-dimensions.w / 2, -dimensions.h / 2);
 
       // Edges
       for (const edge of edges) {
@@ -317,6 +368,7 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
         }
       }
 
+      ctx.restore();
       frameRef.current = requestAnimationFrame(tick);
     }
 
@@ -336,6 +388,30 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
           <span className="text-[10px] font-medium text-white/70">Knowledge Graph</span>
         </div>
       </div>
+      {/* Interactive controls */}
+      <div className="absolute top-3 right-3 z-10 flex flex-col gap-1.5">
+        <button
+          onClick={() => setZoom(z => Math.min(3, z * 1.2))}
+          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm text-white/70 transition hover:bg-white/20 hover:text-white"
+          title="Zoom in"
+        >
+          <MagnifyingGlassPlus size={14} weight="bold" />
+        </button>
+        <button
+          onClick={() => setZoom(z => Math.max(0.5, z * 0.8))}
+          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm text-white/70 transition hover:bg-white/20 hover:text-white"
+          title="Zoom out"
+        >
+          <MagnifyingGlassMinus size={14} weight="bold" />
+        </button>
+        <button
+          onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }); }}
+          className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 backdrop-blur-sm text-white/70 transition hover:bg-white/20 hover:text-white"
+          title="Reset view"
+        >
+          <ArrowsOut size={14} weight="bold" />
+        </button>
+      </div>
       <div className="absolute bottom-3 left-3 z-10 flex items-center gap-3 flex-wrap">
         {Object.entries(COLORS).map(([type, color]) => (
           <div key={type} className="flex items-center gap-1">
@@ -346,7 +422,7 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
       </div>
       {/* Stats overlay */}
       {(liveStats || stats) && (
-        <div className="absolute top-3 right-3 z-10 text-right">
+        <div className="absolute bottom-3 right-3 z-10 text-right">
           <p className="text-[10px] text-white/40 uppercase tracking-wider">{liveStats?.live ? "Live" : "Cached"}</p>
           <p className="text-sm font-bold text-white/80 tabular-nums">{liveStats?.nodes ?? stats?.nodes ?? 0} <span className="text-[10px] font-normal text-white/40">nodes</span></p>
           <p className="text-sm font-bold text-white/80 tabular-nums">{liveStats?.edges ?? stats?.edges ?? 0} <span className="text-[10px] font-normal text-white/40">edges</span></p>
@@ -354,7 +430,7 @@ export default function KnowledgeGraph({ className = "", stats, animate = true }
       )}
       <canvas
         ref={canvasRef}
-        className="w-full h-full"
+        className="h-full w-full cursor-grab active:cursor-grabbing"
         style={{ width: dimensions.w, height: dimensions.h }}
       />
     </div>
